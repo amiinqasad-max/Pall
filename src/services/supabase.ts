@@ -18,21 +18,66 @@
  */
 
 import type { SupabaseClient, Session } from '@supabase/supabase-js';
+
+/**
+ * The client is typed against the game's own schema, not `public`. Naming it
+ * once here keeps that detail out of every consumer.
+ */
+type TartanClient = SupabaseClient<any, 'tartan', 'tartan'>;
 import { analytics } from '@/systems/analytics';
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-export const isBackendConfigured = Boolean(URL && ANON_KEY);
+/**
+ * Supabase renamed the client-side key from "anon" to "publishable"
+ * (`sb_publishable_...`). Both are accepted so a project on either naming works
+ * without an edit; the newer name wins when both are present.
+ *
+ * Either way this key is meant to ship in the bundle — row-level security is
+ * what protects the data, not the key's secrecy. A `service_role` or `sbp_`
+ * token must never appear in a VITE_ variable: those are baked into the
+ * JavaScript every visitor downloads.
+ */
+const CLIENT_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+  import.meta.env.VITE_SUPABASE_ANON_KEY) as string | undefined;
 
-let clientPromise: Promise<SupabaseClient | null> | null = null;
+/**
+ * The game owns a `tartan` schema rather than living in `public`, so it can be
+ * added to a project that already has tables without any chance of colliding
+ * with them. See supabase/migrations/0001_init.sql.
+ */
+const SCHEMA = 'tartan';
+
+/**
+ * Every backend call is bounded.
+ *
+ * supabase-js applies no timeout of its own, so a request that stalls — a
+ * captive portal, a dead cell handoff, a half-open socket — hangs forever, and
+ * the UI waiting on it sits on a loading skeleton with no way out. On mobile
+ * that is the common case, not the edge case. Ten seconds is far longer than a
+ * healthy round trip and far shorter than a player's patience.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+function timedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // Respect a caller's own signal as well as the deadline.
+  init?.signal?.addEventListener('abort', () => controller.abort(), { once: true });
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+export const isBackendConfigured = Boolean(URL && CLIENT_KEY);
+
+let clientPromise: Promise<TartanClient | null> | null = null;
 let sessionPromise: Promise<Session | null> | null = null;
 
-async function createSupabase(): Promise<SupabaseClient | null> {
+async function createSupabase(): Promise<TartanClient | null> {
   if (!isBackendConfigured) return null;
   try {
     const { createClient } = await import('@supabase/supabase-js');
-    return createClient(URL!, ANON_KEY!, {
+    return createClient(URL!, CLIENT_KEY!, {
+      db: { schema: SCHEMA },
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -41,6 +86,7 @@ async function createSupabase(): Promise<SupabaseClient | null> {
       },
       global: {
         headers: { 'x-tartan-client': '1.0.0' },
+        fetch: timedFetch,
       },
       realtime: { params: { eventsPerSecond: 2 } },
     });
@@ -51,7 +97,7 @@ async function createSupabase(): Promise<SupabaseClient | null> {
   }
 }
 
-export function supabase(): Promise<SupabaseClient | null> {
+export function supabase(): Promise<TartanClient | null> {
   if (!isBackendConfigured) return Promise.resolve(null);
   if (!clientPromise) clientPromise = createSupabase();
   return clientPromise;

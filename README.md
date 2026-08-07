@@ -366,19 +366,48 @@ All optional. Copy `.env.example` to `.env.local`.
 | Variable | Effect if unset |
 | --- | --- |
 | `VITE_SUPABASE_URL` | Local-only saves; leaderboard shows your runs only |
-| `VITE_SUPABASE_ANON_KEY` | As above |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | As above. `VITE_SUPABASE_ANON_KEY` also accepted |
 | `VITE_ADSENSE_CLIENT` | House ads serve instead of real ones; rewards still granted |
 
-The anon key is meant to be public — it ships in the client bundle and
-row-level security is what protects the data. Never put a `service_role` key in
-a `VITE_` variable.
+The publishable key is meant to be public — it ships in the client bundle and
+row-level security is what protects the data.
+
+**Never put a `service_role` key or an `sbp_` personal access token in a
+`VITE_` variable.** Those are compiled into the JavaScript every visitor
+downloads. A personal access token in particular is account-wide: it can create
+and delete every project you own.
 
 ## Backend setup
 
-1. Create a Supabase project.
+1. Create a Supabase project (or use an existing one — see below).
 2. Run `supabase/migrations/0001_init.sql` in the SQL editor.
-3. Enable **Anonymous sign-ins** under Authentication → Providers.
-4. Put the project URL and anon key in `.env.local`.
+3. Add `tartan` to **Settings → API → Exposed schemas** (alongside `public`).
+4. Enable **Anonymous sign-ins** under Authentication → Providers.
+5. Put the project URL and publishable key in `.env.local`.
+
+### Why a `tartan` schema
+
+Everything lives in a dedicated `tartan` schema rather than `public`. That is
+deliberate: `profiles` and `coin_ledger` are among the most common table names
+there are, and this migration dropped into a project that already has them
+would skip the CREATE (`if not exists`) and then attach TARTAN's policies to
+somebody else's tables. Policies are OR'd, so that *widens* access on tables
+the game knows nothing about, and `enable row level security` on a table that
+had it off breaks whatever was reading it.
+
+An owned schema makes that impossible, lets the game share a project with an
+unrelated app, and makes it removable with one `drop schema tartan cascade`.
+
+Verify a live project end to end with:
+
+```bash
+VITE_SUPABASE_URL=... VITE_SUPABASE_PUBLISHABLE_KEY=... npm run verify:backend
+```
+
+It asserts the parts nothing else can: that anonymous sign-in works, that
+`submit_run` rejects physically impossible runs, that RLS blocks the direct
+write path into `runs`, and that the coin faucet refuses any source outside the
+three legitimate ones.
 
 Optionally schedule the pruning functions with `pg_cron`:
 
@@ -447,6 +476,7 @@ mean hunting through scene code.
 | `npm run check` | Projection and control solvability checks (runs inside `build`) |
 | `npm run icons` | Regenerate the PWA icon set |
 | `npm run smoke` | Boot the built game in mobile Chromium, play a run, report errors and screenshots |
+| `npm run verify:backend` | Assert a live Supabase project: auth, anti-cheat, RLS, coin faucet |
 | `npm run verify:control` | Drive real pointer events at a dev server and assert the steering model (needs `npm run dev`) |
 | `npm run verify:terrain` | Jump into far terrain and assert camera framing (needs `npm run dev`) |
 
