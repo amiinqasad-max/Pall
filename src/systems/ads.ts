@@ -3,14 +3,16 @@
  *
  * Built against Google's H5 Games Ads API (the `adBreak`/`adConfig` surface
  * that ships with the AdSense tag), because that is the only Google product
- * that actually serves rewarded and interstitial formats to a web game.
+ * that actually serves a rewarded format to a web game.
  *
  * Policy, enforced here in code rather than left to call sites:
  *   - Rewarded ads are opt-in only. Nothing is ever shown without a tap on a
  *     button that states the reward first.
- *   - Interstitials appear only on the game-over screen, never during play,
- *     never on the first three runs of an install, and never inside the
- *     frequency cap window.
+ *   - There are no interstitials. Not capped, not delayed — none. Every ad in
+ *     this game is one the player asked for by tapping a button that named the
+ *     reward first. An unskippable ad between runs is the single most reliable
+ *     way to end a session, and a session that ends is worth less than the
+ *     impression.
  *   - The game pauses and mutes for the duration, and controls are released
  *     before the ad is requested, so no tap can land on an ad by accident.
  *
@@ -26,8 +28,9 @@ import { storage } from '@/systems/storage';
 export type AdPlacement =
   | 'reward_coins'
   | 'reward_continue'
+  | 'reward_double'
   | 'reward_daily_bonus'
-  | 'interstitial_gameover';
+  | 'reward_mystery';
 
 export type AdOutcome = {
   completed: boolean;
@@ -59,14 +62,6 @@ declare global {
 const FREQ_KEY = 'ads.frequency';
 const CLIENT_ID = import.meta.env.VITE_ADSENSE_CLIENT as string | undefined;
 
-/** Interstitial pacing. Deliberately conservative — retention beats ARPDAU. */
-const INTERSTITIAL_RULES = {
-  minRunsBeforeFirst: 3,
-  minSecondsBetween: 120,
-  maxPerSession: 4,
-  maxPerDay: 12,
-};
-
 interface FrequencyState {
   day: string;
   shownToday: number;
@@ -76,14 +71,13 @@ interface FrequencyState {
 
 /** UI hook so React can render the house-ad panel and the "ad playing" veil. */
 export type AdUiHandler = (
-  request: { placement: AdPlacement; kind: 'rewarded' | 'interstitial'; house: boolean } | null,
+  request: { placement: AdPlacement; kind: 'rewarded'; house: boolean } | null,
 ) => Promise<boolean> | boolean;
 
 class AdManager {
   private sdkReady = false;
   private sdkFailed = false;
   private showing = false;
-  private sessionShown = 0;
   private frequency: FrequencyState = { day: '', shownToday: 0, lastShownAt: 0, totalRuns: 0 };
   private uiHandler: AdUiHandler | null = null;
   private onStateChange: ((showing: boolean) => void) | null = null;
@@ -140,7 +134,7 @@ class AdManager {
     return this.showing;
   }
 
-  /** Called by the run pipeline so interstitial pacing can count runs. */
+  /** Lifetime run counter, kept for analytics and reward pacing. */
   async noteRunFinished(): Promise<void> {
     this.frequency = { ...this.frequency, totalRuns: this.frequency.totalRuns + 1 };
     await storage.set(FREQ_KEY, this.frequency);
@@ -175,33 +169,6 @@ class AdManager {
         house: Boolean(final.house),
       });
       return final;
-    } finally {
-      this.setShowing(false);
-    }
-  }
-
-  /**
-   * Interstitial. Only ever called from the game-over screen; the frequency
-   * rules above decide whether anything is actually shown.
-   */
-  async interstitial(): Promise<AdOutcome> {
-    const placement: AdPlacement = 'interstitial_gameover';
-    if (this.showing) return { completed: false, reason: 'already_showing' };
-    if (!this.interstitialAllowed()) return { completed: false, reason: 'frequency_capped' };
-    if (!this.canUseSdk()) return { completed: false, reason: 'blocked' };
-
-    analytics.track('ad_requested', { placement, kind: 'interstitial' });
-    this.setShowing(true);
-    try {
-      const outcome = await this.showSdkInterstitial();
-      if (outcome.completed) await this.recordInterstitial();
-      analytics.track('ad_result', {
-        placement,
-        kind: 'interstitial',
-        completed: outcome.completed,
-        reason: outcome.reason ?? null,
-      });
-      return outcome;
     } finally {
       this.setShowing(false);
     }
@@ -256,55 +223,13 @@ class AdManager {
     });
   }
 
-  private showSdkInterstitial(): Promise<AdOutcome> {
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (outcome: AdOutcome) => {
-        if (settled) return;
-        settled = true;
-        resolve(outcome);
-      };
-      const timeout = setTimeout(() => finish({ completed: false, reason: 'error' }), 20_000);
-      try {
-        window.adBreak!({
-          type: 'next',
-          name: 'interstitial_gameover',
-          adBreakDone: (info) => {
-            clearTimeout(timeout);
-            finish({ completed: info.breakStatus === 'viewed', reason: info.breakStatus === 'viewed' ? undefined : 'no_fill' });
-          },
-        });
-      } catch {
-        clearTimeout(timeout);
-        finish({ completed: false, reason: 'error' });
-      }
-    });
-  }
-
   /** Hands control to React, which renders the fallback promo panel. */
-  private async showHouseAd(placement: AdPlacement, kind: 'rewarded' | 'interstitial'): Promise<AdOutcome> {
+  private async showHouseAd(placement: AdPlacement, kind: 'rewarded'): Promise<AdOutcome> {
     if (!this.uiHandler) return { completed: false, reason: 'blocked', house: true };
     const completed = await this.uiHandler({ placement, kind, house: true });
     return { completed, reason: completed ? undefined : 'dismissed', house: true };
   }
 
-  private interstitialAllowed(): boolean {
-    const today = new Date().toISOString().slice(0, 10);
-    const freq = this.frequency.day === today ? this.frequency : { ...this.frequency, day: today, shownToday: 0 };
-    if (freq.totalRuns < INTERSTITIAL_RULES.minRunsBeforeFirst) return false;
-    if (this.sessionShown >= INTERSTITIAL_RULES.maxPerSession) return false;
-    if (freq.shownToday >= INTERSTITIAL_RULES.maxPerDay) return false;
-    if (Date.now() - freq.lastShownAt < INTERSTITIAL_RULES.minSecondsBetween * 1000) return false;
-    return true;
-  }
-
-  private async recordInterstitial(): Promise<void> {
-    const today = new Date().toISOString().slice(0, 10);
-    const base = this.frequency.day === today ? this.frequency : { ...this.frequency, day: today, shownToday: 0 };
-    this.frequency = { ...base, shownToday: base.shownToday + 1, lastShownAt: Date.now() };
-    this.sessionShown++;
-    await storage.set(FREQ_KEY, this.frequency);
-  }
 }
 
 export const ads = new AdManager();
@@ -313,7 +238,11 @@ export const ads = new AdManager();
 export const AD_REWARDS: Record<string, number> = {
   reward_coins: 120,
   reward_daily_bonus: 200,
+  reward_mystery: 260,
 };
+
+/** Multiplier applied to a run's XP when the player takes the double-up ad. */
+export const DOUBLE_REWARD_MULTIPLIER = 2;
 
 /** How many rewarded coin ads a player may take per day. */
 export const REWARDED_DAILY_CAP = 8;

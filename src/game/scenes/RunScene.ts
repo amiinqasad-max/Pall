@@ -30,6 +30,8 @@ import {
   type Obstacle,
 } from '@/game/world/obstacles';
 import { SpritePool } from '@/game/systems/SpritePool';
+import { Juice } from '@/game/systems/Juice';
+import { Backdrop } from '@/game/render/Backdrop';
 import { TouchInput } from '@/game/systems/TouchInput';
 import { generateBallTexture, generateSharedTextures, textureForTrail } from '@/game/render/textures';
 import { gameEvents } from '@/game/events';
@@ -76,6 +78,9 @@ export class RunScene extends Phaser.Scene {
   private burstEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private sky!: Phaser.GameObjects.Graphics;
   private vignette!: Phaser.GameObjects.Graphics;
+  private flashLayer!: Phaser.GameObjects.Rectangle;
+  private backdrop!: Backdrop;
+  private juice!: Juice;
 
   private camera: CameraState = { z: 0, x: 0, height: GAME.camera.height, curveX: 0, worldY: 0 };
 
@@ -148,6 +153,7 @@ export class RunScene extends Phaser.Scene {
     this.projector.setFogDistance(this.quality.drawDistance * GAME.world.segmentLength * 0.85);
 
     this.sky = this.add.graphics().setDepth(0);
+    this.backdrop = new Backdrop(this, this.env, this.config.tier, this.config.reducedMotion);
     this.road = new RoadRenderer(this, this.projector, this.env, this.quality.drawDistance);
     this.road.setQuality(this.quality.drawDistance, this.config.tier !== 'low');
 
@@ -161,6 +167,22 @@ export class RunScene extends Phaser.Scene {
     this.createParticles();
     this.vignette = this.add.graphics().setDepth(60);
 
+    // Full-screen colour wash for impacts and pickups. A tinted rectangle is
+    // an order of magnitude cheaper than the camera's own flash, and unlike the
+    // camera version it composes with the vignette instead of overriding it.
+    this.flashLayer = this.add
+      .rectangle(0, 0, 10, 10, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setDepth(58)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    this.juice = new Juice(this.cameras.main, {
+      reducedMotion: this.config.reducedMotion,
+      allowShake: this.config.tier !== 'low',
+    });
+
+    this.applyPostFx();
+
     this.track = new TrackGenerator(0);
     this.input$ = new TouchInput(this);
     this.governor = new PerformanceGovernor(this.config.tier, (tier) => this.applyTier(tier));
@@ -172,6 +194,38 @@ export class RunScene extends Phaser.Scene {
     this.input$.setEnabled(false);
     gameEvents.emit('ready', undefined);
     this.beginRun();
+  }
+
+  /**
+   * Bloom, on the tiers that can pay for it.
+   *
+   * Phaser's bloom is a multi-pass gaussian over the whole frame — genuinely
+   * expensive on a low-end GPU, and the art is already built around additive
+   * emissive sprites, so the low tier loses very little by going without. The
+   * medium tier gets a softer, cheaper configuration than high.
+   */
+  private applyPostFx(): void {
+    if (this.config.reducedMotion || this.config.tier === 'low') return;
+    try {
+      // Restraint is the whole game here. Phaser's bloom has no luminance
+      // threshold — it blooms the entire frame — so anything above about 0.5
+      // strength stops being a glow on the bright elements and becomes a milky
+      // veil over the dark ones, taking the road's contrast with it. These
+      // values add halo to the emissive rails and the ball while leaving the
+      // road surface and the lane markings crisp.
+      const strong = this.config.tier === 'high';
+      this.cameras.main.postFX.addBloom(
+        0xffffff,
+        1,
+        1,
+        strong ? 0.5 : 0.36,
+        strong ? 0.55 : 0.4,
+        strong ? 4 : 2,
+      );
+    } catch {
+      // Bloom needs the WebGL renderer and a working post-pipeline; on a driver
+      // that refuses it the game simply renders without.
+    }
   }
 
   private createParticles(): void {
@@ -229,6 +283,8 @@ export class RunScene extends Phaser.Scene {
     });
     this.drawSky(width, height);
     this.drawVignette(width, height);
+    this.flashLayer?.setSize(width, height);
+    this.backdrop?.resize(width, height, this.projector.horizon);
   }
 
   private drawSky(width: number, height: number): void {
@@ -325,6 +381,7 @@ export class RunScene extends Phaser.Scene {
     this.ballVy = 0;
     this.landingBounce = 0;
     this.offScreenFrames = 0;
+    this.juice.reset();
 
     this.track.ensureAhead(this.ballZ + this.quality.drawDistance * GAME.world.segmentLength, 0, this.speed);
 
@@ -442,13 +499,19 @@ export class RunScene extends Phaser.Scene {
 
     this.governor.sample(deltaMs, time);
 
+    // Hit stop and slow motion scale the *simulation* only. Rendering keeps
+    // running at full rate so particles and the backdrop stay alive through a
+    // freeze, which is what separates a deliberate pause from a stutter.
+    const simDt = this.juice.update(dt);
+
     if (this.phase === 'running') {
-      this.stepSimulation(dt);
+      this.stepSimulation(simDt);
     } else if (this.phase === 'dying') {
-      this.stepDeath(dt);
+      this.stepDeath(simDt);
     }
 
-    this.renderFrame();
+    this.projector.setFov(this.juice.fovScale);
+    this.renderFrame(dt);
     this.emitTick(dt, time);
   }
 
@@ -465,6 +528,9 @@ export class RunScene extends Phaser.Scene {
       audio.setIntensity(this.intensity());
       gameEvents.emit('stage', { stage, name: stages[stage].name });
       haptics.fire('success');
+      this.juice.punch(GAME.juice.stagePunch);
+      this.juice.flashScreen(this.env.palette.accent, 0.35);
+      audio.play('achievement', { gain: 0.5 });
     }
 
     // Speed. Linear in survival time, eased toward the boost multiplier.
@@ -482,6 +548,11 @@ export class RunScene extends Phaser.Scene {
 
     this.handleInput(dt);
     this.integrateBall(dt);
+
+    // Continuous, velocity-driven: the camera banks *through* a move rather
+    // than snapping after one.
+    this.juice.setLean(this.ballVx);
+    this.juice.setSpeedFov(this.speed);
 
     // Keep the world generated well past the fog plane so nothing pops in.
     this.track.ensureAhead(this.ballZ + (this.quality.drawDistance + 20) * GAME.world.segmentLength, this.stage, this.speed);
@@ -681,7 +752,9 @@ export class RunScene extends Phaser.Scene {
       if (boosting) {
         audio.play('boost');
         haptics.fire('select');
-        if (!this.config.reducedMotion) this.cameras.main.shake(180, 0.004);
+        this.juice.shake(180, 0.004);
+        this.juice.punch(0.03);
+        this.juice.flashScreen(this.env.palette.accent, 0.2);
       }
     }
   }
@@ -733,6 +806,13 @@ export class RunScene extends Phaser.Scene {
         this.nearMisses++;
         this.score += GAME.scoring.perNearMiss;
         audio.play('near_miss');
+        // The signature moment of the genre: the world drops into slow motion
+        // for a fifth of a second and the camera leans in, so threading a gap
+        // registers as a skill rather than as nothing happening.
+        this.juice.slowMotion(GAME.juice.nearMissScale, GAME.juice.nearMissSeconds);
+        this.juice.punch(GAME.juice.nearMissPunch);
+        this.juice.flashScreen(0xffffff, 0.18);
+        haptics.fire('select');
         gameEvents.emit('nearMiss', { total: this.nearMisses });
       }
     }
@@ -802,6 +882,12 @@ export class RunScene extends Phaser.Scene {
 
       audio.play(this.chain > 8 ? 'prism.streak' : 'prism', { pitch: 1 + Math.min(0.5, this.chain * 0.03) });
       haptics.fire('tap');
+      // A deep chain earns a frame of stillness and a warm flash; a single
+      // pickup gets neither, so the escalation is legible.
+      if (this.chain >= 5) {
+        this.juice.freeze(GAME.juice.chainFreeze);
+        this.juice.flashScreen(0xf59e0b, Math.min(0.3, 0.08 + this.chain * 0.015));
+      }
       gameEvents.emit('prism', { total: this.prisms, chain: this.chain });
 
       if (this.burstEmitter && !this.config.reducedMotion) {
@@ -830,10 +916,13 @@ export class RunScene extends Phaser.Scene {
     audio.setIntensity(0.15);
     haptics.fire('heavy');
 
-    if (!this.config.reducedMotion) {
-      this.cameras.main.shake(320, 0.016);
-      this.cameras.main.flash(140, 244, 63, 94, true);
-    }
+    // Freeze first, then shake. A few frames of absolute stillness at the
+    // moment of impact carries more weight than any amount of shake, and the
+    // shake reads as a consequence of the freeze rather than as noise.
+    this.juice.freeze(GAME.juice.crashFreeze);
+    this.juice.shake(320, 0.016);
+    this.juice.flashScreen(0xf43f5e, 0.85);
+    this.juice.punch(0.05);
 
     if (this.burstEmitter) {
       this.burstEmitter.setParticleTint(0xf87171);
@@ -865,12 +954,25 @@ export class RunScene extends Phaser.Scene {
 
   // --- Rendering --------------------------------------------------------------
 
-  private renderFrame(): void {
+  private renderFrame(dt: number): void {
+    this.backdrop.update(this.camera.x, this.road.curveOffsetAt(this.camera.z + 400), this.speed, dt);
     this.road.render(this.camera, this.track);
     this.renderDecor();
     this.renderPrisms();
     this.renderObstacles();
     this.renderBall();
+    this.renderFlash();
+  }
+
+  /** Applies the decaying colour wash. One property write per frame. */
+  private renderFlash(): void {
+    const { strength, color } = this.juice.flashState;
+    if (strength <= 0.001) {
+      if (this.flashLayer.alpha !== 0) this.flashLayer.setAlpha(0);
+      return;
+    }
+    this.flashLayer.setFillStyle(color, 1);
+    this.flashLayer.setAlpha(Math.min(0.55, strength * 0.55));
   }
 
   /**
@@ -1223,6 +1325,7 @@ export class RunScene extends Phaser.Scene {
     this.obstaclePool.destroy();
     this.prismPool.destroy();
     this.decorPool.destroy();
+    this.backdrop.destroy();
     this.trailEmitter?.destroy();
     this.burstEmitter?.destroy();
     this.road.destroy();

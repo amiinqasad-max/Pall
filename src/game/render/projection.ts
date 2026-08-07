@@ -69,6 +69,12 @@ export class Projector {
   private roadHalfWidth = 5.4;
   private fogDistance = 1;
   private cameraDepth = 1.6;
+  /**
+   * Field-of-view multiplier. Above 1 widens the lens, which pushes the
+   * periphery outward and makes it rush past faster — the cue that actually
+   * communicates speed once the road texture has saturated.
+   */
+  private fovScale = 1;
 
   /**
    * Solves for a camera that puts the road and the ball where the framing asks
@@ -105,6 +111,11 @@ export class Projector {
     this.cameraDepth = (2 * framing.playerOffset * scaleAtPlayer) / height;
   }
 
+  /** 1 = the framing's base lens. Driven by run speed. */
+  setFov(scale: number): void {
+    this.fovScale = Math.max(0.5, Math.min(2, scale));
+  }
+
   setFogDistance(metres: number): void {
     this.fogDistance = Math.max(1, metres);
   }
@@ -138,7 +149,7 @@ export class Projector {
       return { screenX: 0, screenY: 0, scale: 0, roadWidth: 0, depth: 1, visible: false };
     }
 
-    const scale = (this.cameraDepth * this.viewportHeight) / (2 * dz);
+    const scale = (this.cameraDepth * this.viewportHeight) / (2 * dz * this.fovScale);
     const worldX = x - camera.x + curveOffset;
     // The camera's eye is at `worldY + height` in world space — the elevation
     // of the road beneath it, plus its height above that road. Both terms are

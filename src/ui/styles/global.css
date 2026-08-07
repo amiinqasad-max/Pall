@@ -1017,6 +1017,78 @@ input {
   letter-spacing: 0.08em;
 }
 
+/* --------------------------------------------------------- results motion */
+
+/* Stat cells land one at a time. `visibility` rather than `display` keeps the
+   grid's geometry stable so nothing reflows as items arrive. */
+.statcell {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.statcell--in {
+  animation: stat-in 0.42s var(--ease-out) forwards;
+}
+
+@keyframes stat-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.results .result__score {
+  /* Tabular figures stop the score jittering horizontally as it counts. */
+  font-variant-numeric: tabular-nums;
+}
+
+.levelup {
+  animation: levelup-pop 0.7s var(--ease-spring);
+}
+
+@keyframes levelup-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Buttons get a real press: a fast scale down, a spring back. */
+.btn:active:not(:disabled) {
+  transform: scale(0.955);
+}
+
+.btn--primary,
+.btn--amber {
+  position: relative;
+  overflow: hidden;
+}
+
+/* A slow specular sweep across the primary actions. */
+.btn--primary::after,
+.btn--amber::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 35%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  animation: sheen 4.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
 /* ------------------------------------------------------------------ toast */
 
 .toasts {

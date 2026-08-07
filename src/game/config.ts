@@ -191,6 +191,28 @@ export const GAME = {
    * cannot overshoot, so the ball never wobbles around the finger and never
    * needs a deadzone to hide oscillation.
    */
+  /**
+   * Game feel. Small numbers on purpose — juice works by accumulation, and any
+   * one of these being individually noticeable means it is too strong.
+   */
+  juice: {
+    /** Freeze on a fatal impact, seconds. */
+    crashFreeze: 0.09,
+    /** Freeze on collecting a prism at a high chain, seconds. */
+    chainFreeze: 0.03,
+    /** Slow-motion factor and duration for a near miss. */
+    nearMissScale: 0.42,
+    nearMissSeconds: 0.22,
+    /** Camera push-in on a near miss and on a stage change. */
+    nearMissPunch: 0.035,
+    stagePunch: 0.055,
+    /** Maximum camera roll while steering, radians (~1.7 degrees). */
+    maxRoll: 0.03,
+    rollLerp: 6,
+    /** Extra field of view at terminal speed, as a multiplier above 1. */
+    speedFov: 0.1,
+  },
+
   control: {
     /**
      * How much of the viewport width the finger must travel to cross the whole

@@ -12,7 +12,7 @@ import { useStore, type RunSummary } from '@/state/store';
 import { useUi } from '@/state/ui';
 import { gameEvents } from '@/game/events';
 import { detectDevice, qualityFor } from '@/systems/device';
-import { AD_REWARDS, REWARDED_DAILY_CAP, ads } from '@/systems/ads';
+import { AD_REWARDS, DOUBLE_REWARD_MULTIPLIER, REWARDED_DAILY_CAP, ads } from '@/systems/ads';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { analytics } from '@/systems/analytics';
@@ -21,9 +21,9 @@ import { dailyChallenge } from '@/data/missions';
 import { levelFromXp } from '@/data/progression';
 import { storage } from '@/systems/storage';
 import { GameHud } from '@/ui/components/GameHud';
-import { Button, Meter, StatGrid } from '@/ui/components/primitives';
-import { distance as fmtDistance, num } from '@/core/format';
-import { formatDuration } from '@/core/time';
+import { Button } from '@/ui/components/primitives';
+import { ResultsSheet } from '@/ui/components/ResultsSheet';
+import { num } from '@/core/format';
 import { dayKey } from '@/core/time';
 import type { RunResult } from '@/types';
 
@@ -45,6 +45,7 @@ export function PlayScreen() {
   const save = useStore((s) => s.save);
   const completeRun = useStore((s) => s.completeRun);
   const earnCoins = useStore((s) => s.earnCoins);
+  const addXp = useStore((s) => s.addXp);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const engine = useRef<GameModule | null>(null);
@@ -54,6 +55,7 @@ export function PlayScreen() {
   const [busy, setBusy] = useState(false);
   const [coinAdsLeft, setCoinAdsLeft] = useState(REWARDED_DAILY_CAP);
   const [coinClaimed, setCoinClaimed] = useState(false);
+  const [doubled, setDoubled] = useState(false);
 
   // The loadout is frozen for the whole run: changing a skin mid-run from
   // another tab must not reach into the live scene.
@@ -146,6 +148,7 @@ export function PlayScreen() {
       setSummary(outcome);
       setPhase('results');
       setCoinClaimed(false);
+      setDoubled(false);
 
       void ads.noteRunFinished();
 
@@ -230,9 +233,27 @@ export function PlayScreen() {
     toast(`+${amount} coins`, 'reward', '🪙');
   };
 
+  const claimDouble = async (): Promise<void> => {
+    if (busy || doubled || !summary) return;
+    setBusy(true);
+    const outcome = await ads.rewarded('reward_double');
+    setBusy(false);
+    if (!outcome.completed) {
+      toast('Reward not granted', 'error');
+      return;
+    }
+    // Doubling only ever *adds*; the run's own XP was already banked when it
+    // finished, so this is a top-up rather than a recalculation.
+    const bonus = summary.xpGained * (DOUBLE_REWARD_MULTIPLIER - 1);
+    addXp(bonus, 'double_reward');
+    setDoubled(true);
+    void noteRewardTaken();
+    audio.play('levelup');
+    haptics.fire('reward');
+    toast(`+${num(bonus)} bonus XP`, 'reward', '✨');
+  };
+
   const restart = async (): Promise<void> => {
-    // Interstitials live here — between sessions, never mid-run.
-    await ads.interstitial();
     setSummary(null);
     setOffer(null);
     setPhase('playing');
@@ -242,8 +263,7 @@ export function PlayScreen() {
     setTimeout(() => go('play'), 30);
   };
 
-  const exit = async (): Promise<void> => {
-    await ads.interstitial();
+  const exit = (): void => {
     go('home');
   };
 
@@ -325,92 +345,19 @@ export function PlayScreen() {
       )}
 
       {phase === 'results' && summary && (
-        <div className="overlay" role="dialog" aria-modal="true" aria-label="Run complete">
-          <div className="sheet">
-            <div className="center">
-              {summary.newRecord && <div className="result__record">New personal best</div>}
-              <div className="result__label">Score</div>
-              <div className="result__score">{num(summary.result.score)}</div>
-              <div className="small muted" style={{ marginTop: 4 }}>
-                Best {num(Math.max(summary.previousBest, summary.result.score))}
-              </div>
-            </div>
-
-            {summary.rejected && (
-              <p className="tiny center" style={{ color: 'var(--danger)', marginTop: 'var(--sp-3)' }}>
-                This run could not be verified and was not recorded.
-              </p>
-            )}
-
-            <div style={{ margin: 'var(--sp-4) 0' }}>
-              <StatGrid
-                items={[
-                  { label: 'Distance', value: fmtDistance(summary.result.distance) },
-                  { label: 'Time', value: formatDuration(summary.result.durationMs) },
-                  { label: 'Prisms', value: num(summary.result.prisms) },
-                  { label: 'Dodged', value: num(summary.result.obstaclesDodged) },
-                  { label: 'Near miss', value: num(summary.result.nearMisses) },
-                  { label: 'Top speed', value: `${Math.round(summary.result.topSpeed * 3.6)} km/h` },
-                ]}
-              />
-            </div>
-
-            <div style={{ marginBottom: 'var(--sp-4)' }}>
-              <div className="row row--between tiny muted" style={{ marginBottom: 4 }}>
-                <span>Level {level.level}</span>
-                <span className="numeric">+{num(summary.xpGained)} XP</span>
-              </div>
-              <Meter value={level.progress} />
-              {summary.levelsGained > 0 && (
-                <p className="tiny center" style={{ color: 'var(--teal-bright)', marginTop: 6 }}>
-                  Level up! {summary.levelsGained > 1 ? `+${summary.levelsGained} levels` : ''}
-                </p>
-              )}
-            </div>
-
-            {summary.missionsCompleted.length > 0 && (
-              <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
-                <div className="panel__title" style={{ marginBottom: 'var(--sp-2)' }}>
-                  Missions complete
-                </div>
-                {summary.missionsCompleted.map((mission) => (
-                  <div key={mission.id} className="small row row--between">
-                    <span>{mission.title}</span>
-                    <span className="dim">+{mission.xp} XP</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {summary.challengeCompleted && (
-              <div className="panel panel--accent center" style={{ marginBottom: 'var(--sp-3)' }}>
-                <div className="strong">Daily challenge complete</div>
-                <Button size="sm" variant="amber" onClick={() => go('daily')} className="btn--block">
-                  Claim reward
-                </Button>
-              </div>
-            )}
-
-            <div className="stack">
-              {!coinClaimed && coinAdsLeft > 0 && (
-                <Button variant="amber" block disabled={busy} onClick={() => void claimCoinAd()}>
-                  {busy ? 'Loading…' : `▶ Watch ad for ${AD_REWARDS.reward_coins} coins`}
-                </Button>
-              )}
-              {coinClaimed && (
-                <p className="tiny center dim" style={{ margin: 0 }}>
-                  Bonus collected. {coinAdsLeft} more available today.
-                </p>
-              )}
-              <Button variant="primary" size="lg" block onClick={() => void restart()}>
-                Run again
-              </Button>
-              <Button variant="ghost" block onClick={() => void exit()}>
-                Home
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ResultsSheet
+          summary={summary}
+          level={level}
+          coinAdsLeft={coinAdsLeft}
+          coinClaimed={coinClaimed}
+          busy={busy}
+          reducedMotion={save.settings.reducedMotion}
+          onClaimCoins={() => void claimCoinAd()}
+          onDouble={() => void claimDouble()}
+          onRestart={() => void restart()}
+          onHome={exit}
+          onDaily={() => go('daily')}
+        />
       )}
     </div>
   );
