@@ -19,7 +19,10 @@ createRoot(container).render(
  * confusion. Registration is deferred until after load so it never competes
  * with the first paint for bandwidth on a slow connection.
  */
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+declare const __TARTAN_STANDALONE__: boolean | undefined;
+const standalone = typeof __TARTAN_STANDALONE__ !== 'undefined' && __TARTAN_STANDALONE__;
+
+if ('serviceWorker' in navigator && import.meta.env.PROD && !standalone) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker
       .register('/sw.js', { scope: '/' })

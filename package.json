@@ -11,7 +11,8 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "build:standalone": "node scripts/build-standalone.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
