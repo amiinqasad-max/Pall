@@ -13,7 +13,9 @@
     "smoke": "node scripts/smoke.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "build:standalone": "node scripts/build-standalone.mjs",
-    "check": "node scripts/run-checks.mjs"
+    "check": "node scripts/run-checks.mjs",
+    "verify:control": "node scripts/verify-control.mjs",
+    "verify:terrain": "node scripts/verify-terrain.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

@@ -58,12 +58,22 @@ await page.waitForTimeout(2600); // engine chunk + 3 x 600ms countdown
 
 const inOverlay = () => page.locator('.overlay').count().then((n) => n > 0);
 
-const swipe = async (dx, dy) => {
+/** Holds and drags to steer, the way the game is actually played. */
+const steer = async (dx) => {
   const cx = 195;
   const cy = 620;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx + dx, cy + dy, { steps: 5 });
+  await page.mouse.move(cx + dx, cy, { steps: 5 });
+  await page.waitForTimeout(180);
+  await page.mouse.up();
+};
+
+/** A quick tap with no travel: the jump input. */
+const tap = async () => {
+  await page.mouse.move(195, 500);
+  await page.mouse.down();
+  await page.waitForTimeout(60);
   await page.mouse.up();
 };
 
@@ -82,11 +92,11 @@ while (Date.now() - runStart < 40_000) {
   framesPlayed++;
   if (framesPlayed === 6) await shot('04-playing-mid');
   if (framesPlayed === 14) await shot('05-playing-late');
-  await swipe(Math.random() > 0.5 ? -110 : 110, 0);
-  await page.waitForTimeout(600);
+  await steer(Math.random() > 0.5 ? -110 : 110);
+  await page.waitForTimeout(500);
   if (Math.random() > 0.7) {
-    await swipe(0, -110);
-    await page.waitForTimeout(300);
+    await tap();
+    await page.waitForTimeout(250);
   }
 }
 

@@ -12,16 +12,19 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const out = join(mkdtempSync(join(tmpdir(), 'tartan-checks-')), 'checks.mjs');
+const dir = mkdtempSync(join(tmpdir(), 'tartan-checks-'));
+const suites = ['check-projection', 'check-control'];
 
-await build({
-  entryPoints: ['scripts/check-projection.ts'],
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  outfile: out,
-  alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) },
-  logLevel: 'error',
-});
-
-execFileSync(process.execPath, [out], { stdio: 'inherit' });
+for (const suite of suites) {
+  const out = join(dir, `${suite}.mjs`);
+  await build({
+    entryPoints: [`scripts/${suite}.ts`],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    outfile: out,
+    alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) },
+    logLevel: 'error',
+  });
+  execFileSync(process.execPath, [out], { stdio: 'inherit' });
+}

@@ -44,10 +44,30 @@ services on.
 
 | Input | Action |
 | --- | --- |
-| Swipe left / right | Move one lane |
-| Swipe up, or tap | Jump |
-| Swipe down | Drop out of a jump early |
-| Arrow keys / WASD / Space | Same, on desktop |
+| Hold and drag anywhere | Steer — the ball follows your finger |
+| Tap, or a second finger | Jump |
+| Flick up | Jump (secondary) |
+| Arrow keys / WASD, Space, Down | Steer, jump, drop — on desktop |
+
+There are no swipe gestures. You put a thumb anywhere on the screen and drag;
+the ball follows. The touch point is an **anchor**, not a destination — the ball
+does not teleport to your finger, it tracks the offset from where you first
+touched, so you can steer comfortably from wherever your thumb naturally rests.
+Sensitivity is a fraction of the viewport width rather than a fixed
+metres-per-pixel, so the same physical thumb sweep crosses the same amount of
+road on every device.
+
+The ball chases that target with a **critically damped spring** — the fastest
+response that cannot overshoot. That is the specific reason it feels controlled
+rather than floaty: it never oscillates around your finger, so it needs no
+deadzone to hide wobble. Lateral velocity is clamped, so a violent flick
+accelerates the ball hard but can never teleport it. Releasing carries a little
+of the finger's motion through rather than stopping dead.
+
+The spring is integrated at a fixed 1/240s substep rather than once per frame.
+At ~41 rad/s it sits close to the stability limit of a 30fps frame time, and the
+naive version rings or diverges on exactly the low-end hardware that can least
+afford it.
 
 The ball accelerates from 23 m/s to a terminal 63 m/s over about three minutes.
 Score comes from distance, prisms collected (with a chain multiplier up to 5x),
@@ -155,8 +175,13 @@ than tuned by feel:
   speed`. The spacing is derived from how fast the player will actually be
   moving when they arrive, not from a constant, so the late game gets denser and
   more varied but never unreadable.
-- A cluster is verified to leave at least one lane open, and thinned until it
-  does. The generator cannot emit an unwinnable arrangement.
+- A cluster is verified to leave a corridor the ball physically fits through,
+  **measured in metres and checked at every phase of its animation**, then
+  shrunk or thinned until it does. Budgeting by lane count is not sufficient
+  once the player steers freely: a four-lane rotating barrier is 8.6m wide at
+  full extension, which covers the whole 10.8m road once the ball's radius is
+  counted — and because forward speed is not the player's to control, they
+  cannot dodge it by timing. `ensurePassable` enforces the real contract.
 - A breather — a guaranteed empty stretch — is forced on a fixed cadence,
   because weighted random selection eventually produces a run that is
   technically fair and exhausting, and players quit during those.
@@ -419,8 +444,11 @@ mean hunting through scene code.
 | `npm run build` | Typecheck, then production build with service worker |
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run check` | Projection and control solvability checks (runs inside `build`) |
 | `npm run icons` | Regenerate the PWA icon set |
 | `npm run smoke` | Boot the built game in mobile Chromium, play a run, report errors and screenshots |
+| `npm run verify:control` | Drive real pointer events at a dev server and assert the steering model (needs `npm run dev`) |
+| `npm run verify:terrain` | Jump into far terrain and assert camera framing (needs `npm run dev`) |
 
 The smoke test expects `npm run preview` to be running. It drives a real run
 with synthetic swipes and fails on any console error.

@@ -18,7 +18,9 @@ import { GAME } from '@/game/config';
 import {
   MAX_LANE,
   MIN_LANE,
+  extentAt,
   nextObstacleId,
+  type Extent,
   type Obstacle,
   type ObstacleType,
 } from '@/game/world/obstacles';
@@ -75,6 +77,32 @@ const STAGE_TYPES: ObstacleType[][] = [
   ['block', 'mover', 'barrier', 'gate', 'wall', 'pulse', 'laser', 'faller', 'spinner'],
   ['block', 'mover', 'barrier', 'gate', 'wall', 'pulse', 'laser', 'faller', 'spinner'],
 ];
+
+/**
+ * The free lateral travel a cluster must leave for the ball's *centre*, in
+ * metres, at every phase of its animation.
+ *
+ * Lane-count budgeting is not a sufficient guarantee once the player steers
+ * freely: a rotating barrier spanning four lanes is 8.6m wide at full
+ * extension, which covers the whole road after the ball's radius is accounted
+ * for, and the player cannot dodge it by timing because forward speed is not
+ * theirs to control. This is the real contract, and `ensurePassable` enforces
+ * it in metres.
+ */
+const MIN_CORRIDOR = 0.55;
+
+/**
+ * How far ahead the passability sweep looks, in seconds, and how finely.
+ * 10s covers a full cycle of the slowest obstacle (rate 0.7 rad/s), so a
+ * cluster is verified against every phase it could present on arrival — not
+ * just the one it happens to show at generation time.
+ */
+const SWEEP_SECONDS = 10;
+const SWEEP_SAMPLES = 64;
+
+/** Scratch buffers for the passability sweep; never reallocated. */
+const sweepExtents: Extent[] = new Array(4).fill(null).map(() => ({ min: 0, max: 0, bottom: 0, top: 0 }));
+const sweepBlocked: { min: number; max: number }[] = [];
 
 /** How many lanes each type tends to take away, for the "is this survivable" check. */
 const LANES_CONSUMED: Record<ObstacleType, number> = {
@@ -461,11 +489,12 @@ export class TrackGenerator {
       chosen.push(this.buildObstacle('block', segment, lane, usableLanes, stage)!);
     }
 
-    for (const o of chosen) this.obstacles.push(o);
+    const passable = this.ensurePassable(chosen, segment.widthScale);
+    for (const o of passable) this.obstacles.push(o);
 
     // Risk/reward: a prism sitting in the lane next to a hazard.
     if (this.rng.chance(0.4)) {
-      const taken = new Set(chosen.map((o) => o.lane));
+      const taken = new Set(passable.map((o) => o.lane));
       const free = usableLanes.filter((l) => !taken.has(l));
       if (free.length > 0) {
         this.prisms.push({
@@ -477,6 +506,95 @@ export class TrackGenerator {
         });
       }
     }
+  }
+
+
+  /**
+   * Widest free travel available to the ball's centre at time `t`, in metres.
+   * Returns 0 when the cluster is completely solid.
+   */
+  private widestCorridorAt(obstacles: Obstacle[], widthScale: number, t: number): number {
+    const limit = Math.max(
+      GAME.player.radius,
+      GAME.world.roadHalfWidth * widthScale - GAME.player.radius,
+    );
+
+    sweepBlocked.length = 0;
+    for (const obstacle of obstacles) {
+      // Chasms are cleared by jumping; they do not constrain the lateral path.
+      if (obstacle.type === 'gap') continue;
+      const count = extentAt(obstacle, t, sweepExtents);
+      for (let i = 0; i < count; i++) {
+        sweepBlocked.push({
+          min: sweepExtents[i].min - GAME.player.radius,
+          max: sweepExtents[i].max + GAME.player.radius,
+        });
+      }
+    }
+    sweepBlocked.sort((a, b) => a.min - b.min);
+
+    let widest = 0;
+    let cursor = -limit;
+    for (const span of sweepBlocked) {
+      if (span.min > cursor) widest = Math.max(widest, Math.min(span.min, limit) - cursor);
+      cursor = Math.max(cursor, span.max);
+      if (cursor >= limit) break;
+    }
+    if (cursor < limit) widest = Math.max(widest, limit - cursor);
+
+    return widest;
+  }
+
+  /** The tightest the cluster ever gets, across a full sweep of its animation. */
+  private narrowestCorridor(obstacles: Obstacle[], widthScale: number): number {
+    let narrowest = Infinity;
+    for (let i = 0; i < SWEEP_SAMPLES; i++) {
+      const t = (i / SWEEP_SAMPLES) * SWEEP_SECONDS;
+      narrowest = Math.min(narrowest, this.widestCorridorAt(obstacles, widthScale, t));
+      if (narrowest <= 0) break;
+    }
+    return narrowest;
+  }
+
+  /**
+   * Guarantees the cluster can actually be driven through.
+   *
+   * Shrinks the widest sweeping obstacle first, because narrowing a rotor reads
+   * as a design choice while deleting it leaves a conspicuously empty stretch.
+   * Only when nothing can shrink further does it start dropping obstacles.
+   *
+   * Runs once per cluster — roughly once every 100m of track — so the sweep
+   * costs nothing measurable next to the rest of generation.
+   */
+  private ensurePassable(obstacles: Obstacle[], widthScale: number): Obstacle[] {
+    let cluster = obstacles.slice();
+
+    for (let guard = 0; guard < 12; guard++) {
+      if (this.narrowestCorridor(cluster, widthScale) >= MIN_CORRIDOR) return cluster;
+
+      // Prefer shrinking: find the widest span still above the floor.
+      let widest: Obstacle | null = null;
+      for (const o of cluster) {
+        if (o.type === 'gap' || o.laneSpan <= 1) continue;
+        if (!widest || o.laneSpan > widest.laneSpan) widest = o;
+      }
+      if (widest) {
+        widest.laneSpan -= 1;
+        continue;
+      }
+
+      // Nothing left to shrink: drop the most recently added hazard.
+      const droppable = cluster.filter((o) => o.type !== 'gap');
+      if (droppable.length <= 1) break;
+      const victim = droppable[droppable.length - 1];
+      cluster = cluster.filter((o) => o !== victim);
+    }
+
+    // A single obstacle that still cannot be passed is worse than none at all.
+    if (this.narrowestCorridor(cluster, widthScale) < MIN_CORRIDOR) {
+      return cluster.filter((o) => o.type === 'gap');
+    }
+    return cluster;
   }
 
   private buildObstacle(

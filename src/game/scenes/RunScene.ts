@@ -4,7 +4,7 @@
  * Structure of a frame, in order:
  *   1. advance the clock, speed and distance
  *   2. consume one buffered input
- *   3. integrate the ball (lane interpolation, jump arc)
+ *   3. integrate the ball (steering spring, jump arc)
  *   4. generate track ahead, recycle track behind
  *   5. collide against obstacles the ball crossed this frame
  *   6. render road, then entities, then the ball
@@ -23,8 +23,6 @@ import { RoadRenderer } from '@/game/render/RoadRenderer';
 import { TrackGenerator } from '@/game/world/TrackGenerator';
 import {
   LANE_WIDTH,
-  MAX_LANE,
-  MIN_LANE,
   OBSTACLE_LABELS,
   extentAt,
   laneToX,
@@ -32,7 +30,7 @@ import {
   type Obstacle,
 } from '@/game/world/obstacles';
 import { SpritePool } from '@/game/systems/SpritePool';
-import { SwipeInput } from '@/game/systems/SwipeInput';
+import { TouchInput } from '@/game/systems/TouchInput';
 import { generateBallTexture, generateSharedTextures, textureForTrail } from '@/game/render/textures';
 import { gameEvents } from '@/game/events';
 import { getSkin, getTrail } from '@/data/cosmetics';
@@ -65,7 +63,7 @@ export class RunScene extends Phaser.Scene {
   private projector!: Projector;
   private road!: RoadRenderer;
   private track!: TrackGenerator;
-  private input$!: SwipeInput;
+  private input$!: TouchInput;
   private governor!: PerformanceGovernor;
   private env!: Environment;
 
@@ -100,10 +98,11 @@ export class RunScene extends Phaser.Scene {
   private continued = false;
   private graceUntil = 0;
 
-  private lane = 0;
-  private laneFrom = 0;
-  private laneProgress = 1;
   private ballX = 0;
+  /** Lateral velocity, m/s. Driven by the steering spring, clamped to a max. */
+  private ballVx = 0;
+  /** Accumulator for the fixed-step lateral integration. */
+  private lateralAccumulator = 0;
   private ballY = 0;
   private ballZ = 0;
   private previousZ = 0;
@@ -163,7 +162,7 @@ export class RunScene extends Phaser.Scene {
     this.vignette = this.add.graphics().setDepth(60);
 
     this.track = new TrackGenerator(0);
-    this.input$ = new SwipeInput(this);
+    this.input$ = new TouchInput(this);
     this.governor = new PerformanceGovernor(this.config.tier, (tier) => this.applyTier(tier));
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
@@ -216,6 +215,9 @@ export class RunScene extends Phaser.Scene {
 
   private layout(): void {
     const { width, height } = this.scale.gameSize;
+    // Steering sensitivity is a fraction of the viewport, so it has to be
+    // recomputed whenever the viewport changes (rotation, browser chrome).
+    this.input$?.resize(width);
     this.projector.resize(width, height, {
       playerOffset: GAME.camera.playerOffset,
       cameraHeight: GAME.camera.height,
@@ -309,10 +311,10 @@ export class RunScene extends Phaser.Scene {
     this.continued = false;
     this.graceUntil = 0;
 
-    this.lane = 0;
-    this.laneFrom = 0;
-    this.laneProgress = 1;
     this.ballX = 0;
+    this.ballVx = 0;
+    this.lateralAccumulator = 0;
+    this.input$.recentre(0);
     this.ballY = 0;
     this.ballZ = GAME.camera.playerOffset;
     this.previousZ = this.ballZ;
@@ -367,6 +369,9 @@ export class RunScene extends Phaser.Scene {
   resumeRun(): void {
     if (this.phase !== 'paused') return;
     this.phase = 'running';
+    // Re-anchor on the ball's current position, or it would immediately spring
+    // back to wherever the finger last left the target.
+    this.input$.recentre(this.ballX);
     this.input$.setEnabled(true);
     audio.setIntensity(this.intensity());
     gameEvents.emit('resumed', undefined);
@@ -387,13 +392,13 @@ export class RunScene extends Phaser.Scene {
       if (obstacle.z > this.ballZ - 4 && obstacle.z < clearTo) obstacle.resolved = true;
     }
 
-    this.lane = 0;
-    this.laneFrom = 0;
-    this.laneProgress = 1;
     this.ballX = 0;
+    this.ballVx = 0;
+    this.lateralAccumulator = 0;
     this.ballY = 0;
     this.airborne = false;
     this.ball.setAlpha(1);
+    this.input$.recentre(0);
 
     this.phase = 'running';
     this.input$.setEnabled(true);
@@ -475,7 +480,7 @@ export class RunScene extends Phaser.Scene {
     this.camera.z = this.ballZ - GAME.camera.playerOffset;
     this.score += advance * GAME.scoring.perMetre;
 
-    this.handleInput();
+    this.handleInput(dt);
     this.integrateBall(dt);
 
     // Keep the world generated well past the fog plane so nothing pops in.
@@ -491,32 +496,42 @@ export class RunScene extends Phaser.Scene {
     return Math.min(1, 0.3 + (this.speed - GAME.speed.start) / (GAME.speed.max - GAME.speed.start) * 0.7);
   }
 
-  private handleInput(): void {
-    const action = this.input$.consume();
+  /** Half the lateral space the ball may occupy at a given z, in metres. */
+  private lateralLimitAt(z: number): number {
+    const segment = this.track.segmentAt(z);
+    const width = GAME.world.roadHalfWidth * (segment?.widthScale ?? 1);
+    // Keep the whole ball on the road, not just its centre.
+    return Math.max(GAME.player.radius, width - GAME.player.radius);
+  }
+
+  private handleInput(dt: number): void {
+    // --- Steering: continuous, read every frame -------------------------------
+    const axis = this.input$.keyboardAxis;
+    if (axis !== 0) {
+      this.input$.setTarget(this.input$.target + axis * GAME.control.keyboardSpeed * dt);
+    }
+
+    // Clamp the target to the road and write it back, so dragging past the edge
+    // never accumulates slack that has to be unwound before the ball responds.
+    const limit = this.lateralLimitAt(this.ballZ);
+    const clamped = Math.max(-limit, Math.min(limit, this.input$.target));
+    if (clamped !== this.input$.target) this.input$.setTarget(clamped);
+
+    // Release inertia: a small carry-through so lifting the finger eases out
+    // instead of stopping dead.
+    const impulse = this.input$.takeReleaseImpulse();
+    if (impulse !== 0) {
+      this.ballVx = Math.max(
+        -GAME.control.maxLateralSpeed,
+        Math.min(GAME.control.maxLateralSpeed, this.ballVx + impulse),
+      );
+    }
+
+    // --- Discrete actions -----------------------------------------------------
+    const action = this.input$.consumeAction();
     if (!action) return;
 
     switch (action) {
-      case 'left':
-      case 'right': {
-        const direction = action === 'left' ? -1 : 1;
-        const segment = this.track.segmentAt(this.ballZ);
-        const width = segment?.widthScale ?? 1;
-        const limit = Math.max(1, Math.floor((GAME.world.lanes * width) / 2));
-        const target = Math.max(Math.max(MIN_LANE, -limit), Math.min(Math.min(MAX_LANE, limit), this.lane + direction));
-        if (target === this.lane) {
-          // Already at the edge — a small nudge so the input is acknowledged
-          // rather than silently swallowed.
-          this.ball.setX(this.ball.x + direction * 4);
-          return;
-        }
-        // Start the new interpolation from wherever the ball currently is, not
-        // from the last lane centre, so a mid-move reversal is seamless.
-        this.laneFrom = this.ballX / LANE_WIDTH;
-        this.lane = target;
-        this.laneProgress = 0;
-        audio.play('ui.toggle', { gain: 0.4 });
-        break;
-      }
       case 'jump':
         if (!this.airborne) {
           this.airborne = true;
@@ -538,16 +553,59 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private integrateBall(dt: number): void {
-    // Lane interpolation with an ease-out, so the move starts fast (responsive)
-    // and settles softly (readable).
-    if (this.laneProgress < 1) {
-      this.laneProgress = Math.min(1, this.laneProgress + dt / GAME.player.laneChangeTime);
-      const t = 1 - Math.pow(1 - this.laneProgress, 3);
-      this.ballX = (this.laneFrom + (this.lane - this.laneFrom) * t) * LANE_WIDTH;
-    } else {
-      this.ballX = laneToX(this.lane);
+  /**
+   * Lateral motion: a critically damped spring chasing the steering target.
+   *
+   *   a = w2*(target - x) - 2w*v      (critical damping: zeta = 1)
+   *
+   * Critical damping is the specific reason this feels controlled rather than
+   * floaty — it is the fastest response that cannot overshoot, so the ball
+   * never oscillates around the finger and needs no deadzone to hide wobble.
+   *
+   * Velocity is clamped, which is what stops a fast flick from teleporting the
+   * ball: the spring asks for whatever acceleration it likes, but the ball can
+   * only ever travel at `maxLateralSpeed`.
+   *
+   * Integrated at a fixed substep rather than once per frame. The spring is
+   * stiff (w ~ 41 rad/s) and explicit integration at a 33ms frame time is close
+   * to its stability limit — on a device that drops to 20fps the naive version
+   * rings or diverges, which reads to a player as the controls "breaking" on
+   * exactly the hardware that can least afford it.
+   */
+  private integrateLateral(dt: number): void {
+    const omega = 2 * Math.PI * GAME.control.responseHz;
+    const maxSpeed = GAME.control.maxLateralSpeed;
+    const step = GAME.control.substep;
+    const target = this.input$.target;
+
+    this.lateralAccumulator += dt;
+    // Bound the catch-up so a long stall cannot spiral into hundreds of steps.
+    if (this.lateralAccumulator > 0.25) this.lateralAccumulator = 0.25;
+
+    while (this.lateralAccumulator >= step) {
+      this.lateralAccumulator -= step;
+      const accel = omega * omega * (target - this.ballX) - 2 * omega * this.ballVx;
+      this.ballVx += accel * step;
+      if (this.ballVx > maxSpeed) this.ballVx = maxSpeed;
+      else if (this.ballVx < -maxSpeed) this.ballVx = -maxSpeed;
+      this.ballX += this.ballVx * step;
     }
+
+    // Hard wall at the road edge. Zeroing the inward velocity stops the ball
+    // from grinding along the rail with a bank of stored spring energy that
+    // fires it across the road the moment the finger comes back.
+    const limit = this.lateralLimitAt(this.ballZ);
+    if (this.ballX > limit) {
+      this.ballX = limit;
+      if (this.ballVx > 0) this.ballVx = 0;
+    } else if (this.ballX < -limit) {
+      this.ballX = -limit;
+      if (this.ballVx < 0) this.ballVx = 0;
+    }
+  }
+
+  private integrateBall(dt: number): void {
+    this.integrateLateral(dt);
 
     // Vertical motion: a straightforward semi-implicit Euler integration under
     // constant gravity. It replaces a parametric arc sampled by elapsed time,

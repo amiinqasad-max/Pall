@@ -73,10 +73,6 @@ export const GAME = {
 
   player: {
     radius: 0.92,
-    /** Seconds to cross one lane. Lower = snappier, higher = floatier. */
-    laneChangeTime: 0.135,
-    /** Extra lane changes accepted while one is in flight (input buffering). */
-    inputBuffer: 1,
     /** Peak height of a jump, metres. Gravity is derived from this and jumpTime. */
     jumpHeight: 3.5,
     /** Airborne duration, seconds. Deliberately short — this is not a platformer. */
@@ -186,15 +182,51 @@ export const GAME = {
     },
   },
 
-  input: {
-    /** Minimum travel, in px, before a drag counts as a swipe. */
-    swipeThreshold: 22,
-    /** A swipe must complete within this window to register as a flick. */
-    swipeTimeout: 320,
-    /** Beyond this ratio the gesture is vertical rather than horizontal. */
-    axisRatio: 1.25,
-    /** Taps shorter than this with no travel count as a jump. */
+  /**
+   * Direct touch steering.
+   *
+   * The ball follows a target that the finger drags, and chases it with a
+   * critically damped spring. Critical damping is the specific choice that
+   * makes this feel premium rather than floaty: it is the fastest response that
+   * cannot overshoot, so the ball never wobbles around the finger and never
+   * needs a deadzone to hide oscillation.
+   */
+  control: {
+    /**
+     * How much of the viewport width the finger must travel to cross the whole
+     * road. Expressed as a fraction rather than metres-per-pixel so the control
+     * feels identical on a 320px phone and a 480px one — a fixed sensitivity
+     * makes small screens twitchy and large screens sluggish.
+     */
+    traverseFraction: 0.5,
+    /**
+     * Spring frequency in Hz. Higher is more immediate and less forgiving;
+     * ~6.5Hz settles in about 100ms, matching the snap of the lane system it
+     * replaces without the discrete steps.
+     */
+    responseHz: 6.5,
+    /** Hard ceiling on lateral speed, m/s. A fast flick cannot teleport. */
+    maxLateralSpeed: 26,
+    /**
+     * Fixed integration step, seconds. The spring is stiff enough to go
+     * unstable at a 30fps frame time, so it is substepped rather than
+     * integrated once per frame — 4 steps at 60fps, 8 at 30fps, each a handful
+     * of flops.
+     */
+    substep: 1 / 240,
+    /**
+     * Fraction of the finger's release velocity carried into the ball, giving a
+     * small flick-through rather than a dead stop. Kept low: this is a
+     * precision game, and real inertia fights the player.
+     */
+    releaseInertia: 0.1,
+    /** Target movement speed for held keyboard input, m/s. */
+    keyboardSpeed: 15,
+    /** A touch under this duration that barely moves is a tap, i.e. a jump. */
     tapMaxMs: 220,
+    tapSlopPx: 14,
+    /** Upward flick distance that also triggers a jump, in px. */
+    flickUpPx: 46,
   },
 } as const;
 

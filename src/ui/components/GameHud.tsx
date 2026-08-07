@@ -11,7 +11,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { gameEvents } from '@/game/events';
-import { GAME } from '@/game/config';
 import { IconButton } from '@/ui/components/primitives';
 import { num } from '@/core/format';
 
@@ -141,8 +140,7 @@ export function GameHud({ visible, showFps, bestScore, onPause }: Props) {
 
       {hint && countdown === null && (
         <div className="hud__hint">
-          Swipe to change lane · swipe up or tap to jump
-          {GAME.player.jumpTime > 0 ? ' · swipe down to drop' : ''}
+          Hold and drag anywhere to steer · tap to jump
         </div>
       )}
 

@@ -55,6 +55,20 @@ export interface Obstacle {
 
 /** Lateral half-extent of a standard single-lane obstacle, in metres. */
 const laneWidth = (GAME.world.roadHalfWidth * 2) / GAME.world.lanes;
+
+/**
+ * How far a gate's solid panels are pulled back from the edge of the opening.
+ *
+ * An opening exactly one lane wide (2.16m) admits a 1.84m ball with 0.16m to
+ * spare on each side. That was fine when the player snapped to lane centres and
+ * is far too fine now that they steer freely — it asks for pixel-accurate
+ * placement at 60 m/s. Widening the aperture keeps the gate readable while
+ * giving the ball's centre a real target to aim at.
+ */
+const GATE_OPENING_INSET = 0.3;
+
+/** Far enough outside the road that an outer panel never shows a false gap. */
+const OFF_ROAD = GAME.world.roadHalfWidth * 3;
 export const LANE_WIDTH = laneWidth;
 const BODY_HALF = laneWidth * 0.44;
 
@@ -167,13 +181,14 @@ export function extentAt(obstacle: Obstacle, t: number, out: Extent[]): number {
 
       const closeRun = (endLane: number): void => {
         if (runStart === null || count >= extentBuffer.length) return;
-        out[count] = write(
-          count,
-          laneToX(runStart) - laneWidth / 2,
-          laneToX(endLane) + laneWidth / 2,
-          0,
-          obstacle.height,
-        );
+        // Pull the panel back from the opening, but only on edges that face an
+        // opening. An outer panel runs off the road instead, so the inset can
+        // never manufacture a gap along the rail.
+        const min =
+          runStart === MIN_LANE ? -OFF_ROAD : laneToX(runStart) - laneWidth / 2 + GATE_OPENING_INSET;
+        const max =
+          endLane === MAX_LANE ? OFF_ROAD : laneToX(endLane) + laneWidth / 2 - GATE_OPENING_INSET;
+        out[count] = write(count, min, max, 0, obstacle.height);
         count++;
         runStart = null;
       };
