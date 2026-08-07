@@ -33,6 +33,7 @@ services on.
 - [Performance](#performance)
 - [Configuration](#configuration)
 - [Backend setup](#backend-setup)
+- [Deployment](#deployment)
 - [Project layout](#project-layout)
 - [Scripts](#scripts)
 - [Known limitations](#known-limitations)
@@ -362,6 +363,24 @@ select cron.schedule('tartan-prune-runs',      '30 3 * * *', 'select public.prun
 ```
 
 ---
+
+## Deployment
+
+Any static host works — the build output is plain files. `vercel.json` is
+included and configures the two things that actually matter for an offline-first
+PWA:
+
+- `/assets/*` is served `immutable` for a year. The filenames are content
+  hashes, so they can never go stale, and without this every launch revalidates
+  the 1.4MB engine chunk over a mobile connection.
+- `sw.js`, the shell and the manifest always revalidate. If the service worker
+  is ever served from cache, a client can be pinned to an old build with no
+  route back — which is the one failure mode an offline-first app cannot
+  recover from on its own.
+
+The app also reloads once when a new service worker takes control, so an
+installed PWA picks up a new build instead of running the old bundle until the
+user happens to cold-start it. It will not do this mid-run.
 
 ## Project layout
 
