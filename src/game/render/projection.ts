@@ -140,7 +140,12 @@ export class Projector {
 
     const scale = (this.cameraDepth * this.viewportHeight) / (2 * dz);
     const worldX = x - camera.x + curveOffset;
-    const worldY = y - camera.height + camera.worldY;
+    // The camera's eye is at `worldY + height` in world space — the elevation
+    // of the road beneath it, plus its height above that road. Both terms are
+    // therefore subtracted. Adding `camera.worldY` here instead doubles the
+    // terrain elevation rather than cancelling it, which is invisible while the
+    // ground is flat (elevation 0) and catastrophic on the first hill.
+    const worldY = y - camera.height - camera.worldY;
 
     return {
       screenX: this.halfWidth + worldX * scale,

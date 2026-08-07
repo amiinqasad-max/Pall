@@ -6,13 +6,14 @@
   "description": "TARTAN — a premium endless arcade runner for the mobile web.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run check && tsc --noEmit && vite build",
     "build:fast": "vite build",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "icons": "node scripts/generate-icons.mjs",
-    "build:standalone": "node scripts/build-standalone.mjs"
+    "build:standalone": "node scripts/build-standalone.mjs",
+    "check": "node scripts/run-checks.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

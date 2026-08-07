@@ -108,9 +108,23 @@ export class RunScene extends Phaser.Scene {
   private ballZ = 0;
   private previousZ = 0;
   private airborne = false;
-  private jumpTime = 0;
-  private jumpDuration: number = GAME.player.jumpTime;
+  /** Vertical velocity, m/s. The jump is integrated, not sampled from a curve. */
+  private ballVy = 0;
+  /** Landing squash timer. Separate from the jump clock — they are not the same thing. */
+  private landingBounce = 0;
   private spin = 0;
+
+  /**
+   * Gravity, derived so a jump reaches exactly `jumpHeight` in `jumpTime`
+   * seconds: for a symmetric arc, h = g·T²/8, so g = 8h/T².
+   */
+  private static readonly GRAVITY =
+    (8 * GAME.player.jumpHeight) / (GAME.player.jumpTime * GAME.player.jumpTime);
+  /** Launch velocity for that arc: v = g·T/2. */
+  private static readonly JUMP_VELOCITY = (RunScene.GRAVITY * GAME.player.jumpTime) / 2;
+
+  /** Consecutive frames the ball has projected outside the viewport. */
+  private offScreenFrames = 0;
 
   private quality = qualityFor('high');
   private tickAccumulator = 0;
@@ -306,6 +320,9 @@ export class RunScene extends Phaser.Scene {
     this.camera.x = 0;
     this.camera.worldY = 0;
     this.airborne = false;
+    this.ballVy = 0;
+    this.landingBounce = 0;
+    this.offScreenFrames = 0;
 
     this.track.ensureAhead(this.ballZ + this.quality.drawDistance * GAME.world.segmentLength, 0, this.speed);
 
@@ -426,7 +443,7 @@ export class RunScene extends Phaser.Scene {
       this.stepDeath(dt);
     }
 
-    this.renderFrame(dt);
+    this.renderFrame();
     this.emitTick(dt, time);
   }
 
@@ -503,16 +520,19 @@ export class RunScene extends Phaser.Scene {
       case 'jump':
         if (!this.airborne) {
           this.airborne = true;
-          this.jumpTime = 0;
-          this.jumpDuration = GAME.player.jumpTime;
+          this.ballVy = RunScene.JUMP_VELOCITY;
+          this.landingBounce = 0;
           audio.play('jump');
           haptics.fire('tap');
         }
         break;
       case 'slam':
         if (this.airborne) {
-          // Cut the jump short: the counter-play to a badly timed jump.
-          this.jumpDuration = Math.max(this.jumpTime + 0.06, this.jumpDuration / GAME.player.slamGravity);
+          // Drive the ball down hard: the counter-play to a badly timed jump.
+          // Setting a velocity rather than rescaling a duration means the arc
+          // stays a real trajectory and cannot be pushed to a negative or
+          // absurd airtime by repeated inputs.
+          this.ballVy = Math.min(this.ballVy, -GAME.player.slamSpeed);
         }
         break;
     }
@@ -529,18 +549,38 @@ export class RunScene extends Phaser.Scene {
       this.ballX = laneToX(this.lane);
     }
 
+    // Vertical motion: a straightforward semi-implicit Euler integration under
+    // constant gravity. It replaces a parametric arc sampled by elapsed time,
+    // which had no notion of velocity and so could not be interrupted (a slam
+    // had to rewrite the jump's duration mid-flight, which is what let a
+    // mistimed input produce a nonsensical trajectory).
+    //
+    // There is no restitution: the ball does not bounce on landing, by design.
+    // Landing is a hard stop plus a cosmetic squash, because a bouncing ball in
+    // a lane-based runner costs the player control at exactly the moment they
+    // need it back.
     if (this.airborne) {
-      this.jumpTime += dt;
-      const t = this.jumpTime / this.jumpDuration;
-      if (t >= 1) {
-        this.airborne = false;
+      this.ballVy -= RunScene.GRAVITY * dt;
+      this.ballY += this.ballVy * dt;
+
+      if (this.ballY <= 0) {
         this.ballY = 0;
+        this.ballVy = 0;
+        this.airborne = false;
+        this.landingBounce = 0.18;
         audio.play('land', { gain: 0.5 });
         haptics.fire('tap');
-      } else {
-        // Parabolic arc, apex at t = 0.5.
-        this.ballY = GAME.player.jumpHeight * 4 * t * (1 - t);
+      } else if (this.ballY > GAME.player.maxHeight) {
+        // Structural backstop. Unreachable with the constants above; here so a
+        // future change to the arc degrades to a capped jump rather than to a
+        // ball outside the shot.
+        this.ballY = GAME.player.maxHeight;
+        this.ballVy = Math.min(this.ballVy, 0);
       }
+    } else {
+      this.ballY = 0;
+      this.ballVy = 0;
+      if (this.landingBounce > 0) this.landingBounce = Math.max(0, this.landingBounce - dt);
     }
 
     // Rolling. Circumference-accurate so the ball never looks like it slides.
@@ -550,7 +590,28 @@ export class RunScene extends Phaser.Scene {
     const curveLean = this.road.curveOffsetAt(this.ballZ + 30) - this.road.curveOffsetAt(this.ballZ);
     const targetX = this.ballX * 0.55 + curveLean * GAME.camera.curveLean * 0.05;
     this.camera.x += (targetX - this.camera.x) * Math.min(1, dt * 6);
-    this.camera.worldY = this.road.elevationAt(this.camera.z);
+
+    // Vertical: the camera tracks the *terrain*, never the ball.
+    //
+    // Its height above the road is a constant (GAME.camera.height); the only
+    // thing that moves is the ground elevation it is measured from, and that is
+    // smoothed so a sharp crest eases the horizon instead of snapping it.
+    // Because the ball's own height never enters this, a jump moves the ball
+    // within the frame and leaves the camera completely still.
+    const groundUnderCamera = this.road.elevationAt(this.camera.z);
+    const smoothing = 1 - Math.exp(-GAME.camera.elevationLerp * dt);
+    this.camera.worldY += (groundUnderCamera - this.camera.worldY) * smoothing;
+
+    // Smoothing alone is unbounded on a sustained climb, and an unbounded lag
+    // is precisely what walks the ball off the top or bottom of the screen.
+    // Clamp the reference to within a fixed distance of the ground under the
+    // ball, which puts a hard ceiling on how far the ball can leave its anchor.
+    const groundUnderBall = this.road.elevationAt(this.ballZ);
+    const lag = GAME.camera.maxElevationLag;
+    this.camera.worldY = Math.max(
+      groundUnderBall - lag,
+      Math.min(groundUnderBall + lag, this.camera.worldY),
+    );
   }
 
   private updateBoostZone(): void {
@@ -746,12 +807,12 @@ export class RunScene extends Phaser.Scene {
 
   // --- Rendering --------------------------------------------------------------
 
-  private renderFrame(dt: number): void {
+  private renderFrame(): void {
     this.road.render(this.camera, this.track);
     this.renderDecor();
     this.renderPrisms();
     this.renderObstacles();
-    this.renderBall(dt);
+    this.renderBall();
   }
 
   /**
@@ -939,7 +1000,45 @@ export class RunScene extends Phaser.Scene {
     pool.end();
   }
 
-  private renderBall(dt: number): void {
+  /**
+   * Recovery path for a ball that has left the frame.
+   *
+   * A single bad frame is tolerated — a resize mid-frame can produce one. A
+   * sustained one means the run is unplayable, and letting it continue means
+   * banking a score the player did not earn and could not see. Recover once by
+   * resetting the vertical state; if that does not take, end the run.
+   */
+  private noteBallOffScreen(reason: string): void {
+    if (this.phase !== 'running') return;
+    this.offScreenFrames++;
+
+    if (this.offScreenFrames === 12) {
+      analytics.track('ball_offscreen_recovered', {
+        reason,
+        distance: Math.round(this.distance),
+        ballY: this.ballY,
+        cameraWorldY: this.camera.worldY,
+      });
+      this.ballY = 0;
+      this.ballVy = 0;
+      this.airborne = false;
+      this.camera.worldY = this.road.elevationAt(this.ballZ);
+      return;
+    }
+
+    if (this.offScreenFrames > 48) {
+      analytics.track('ball_offscreen_fatal', {
+        reason,
+        distance: Math.round(this.distance),
+        ballY: this.ballY,
+        cameraWorldY: this.camera.worldY,
+      });
+      this.offScreenFrames = 0;
+      this.die('The Void');
+    }
+  }
+
+  private renderBall(): void {
     const curve = this.road.curveOffsetAt(this.ballZ);
     const roadY = this.road.elevationAt(this.ballZ);
     const projected = this.projector.project(
@@ -953,7 +1052,30 @@ export class RunScene extends Phaser.Scene {
     if (!projected.visible) {
       this.ball.setVisible(false);
       this.ballShadow.setVisible(false);
+      this.noteBallOffScreen('behind_camera');
       return;
+    }
+
+    // Fail-safe. Nothing above should be able to put the ball outside the shot,
+    // and the projection checks in scripts/check-projection.ts assert exactly
+    // that. This exists because the alternative failure mode — the player
+    // invisible while the score keeps climbing — is the worst outcome in the
+    // game, and it should degrade to something recoverable rather than depend
+    // on the maths upstream always being right.
+    const margin = this.projector.height * 0.08;
+    const off =
+      projected.screenY < -margin ||
+      projected.screenY > this.projector.height + margin ||
+      !Number.isFinite(projected.screenX) ||
+      !Number.isFinite(projected.screenY);
+
+    if (off) {
+      this.noteBallOffScreen('out_of_frame');
+      // Pin it to the nearest edge so the player can still see where they are.
+      projected.screenX = Math.max(0, Math.min(this.projector.width, projected.screenX || 0));
+      projected.screenY = Math.max(0, Math.min(this.projector.height, projected.screenY || 0));
+    } else {
+      this.offScreenFrames = 0;
     }
 
     const size = GAME.player.radius * 2 * projected.scale;
@@ -988,9 +1110,10 @@ export class RunScene extends Phaser.Scene {
     }
 
     // Squash on landing, for weight.
-    if (!this.airborne && this.jumpTime > 0) {
-      this.jumpTime = Math.max(0, this.jumpTime - dt * 3);
-      const squash = 1 + Math.sin(this.jumpTime * 12) * 0.06;
+    if (this.landingBounce > 0) {
+      // Cosmetic only: a decaying squash on touchdown. It reads as weight
+      // without giving the ball any actual bounce to fight.
+      const squash = 1 + Math.sin(this.landingBounce * 34) * 0.06 * (this.landingBounce / 0.18);
       this.ball.setDisplaySize(size * squash, size / squash);
     }
   }

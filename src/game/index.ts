@@ -86,6 +86,22 @@ export function launchGame(options: LaunchOptions): void {
   } satisfies RunConfig);
 
   scene = game.scene.getScene('run') as RunScene;
+
+  // Dev-only debug handle. Terrain bugs only show up hundreds of metres into a
+  // run, which is impractical to reach by hand every time; this makes the far
+  // track reachable from the console and from the verification scripts.
+  if (import.meta.env.DEV) {
+    // Resolve the scene lazily: at this point Phaser may not have finished
+    // booting it, so capturing the reference eagerly can hand back null.
+    (window as unknown as { __tartan?: unknown }).__tartan = {
+      get game() {
+        return game;
+      },
+      get scene() {
+        return game?.scene.getScene('run') ?? null;
+      },
+    };
+  }
 }
 
 export function destroyGame(): void {

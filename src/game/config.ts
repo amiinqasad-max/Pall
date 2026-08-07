@@ -27,6 +27,20 @@ export const GAME = {
     drawDistance: 96,
     /** How hard the camera leans into curves, 0..1. */
     curveLean: 0.62,
+    /**
+     * How quickly the camera's ground reference follows the terrain under it,
+     * as an exponential rate (per second). The camera height above the road is
+     * fixed; only the elevation it is measured from is smoothed, so a sharp
+     * crest eases the horizon instead of snapping it.
+     */
+    elevationLerp: 5.5,
+    /**
+     * Hard cap, in metres, on how far the camera's smoothed ground reference
+     * may lag the true elevation under the ball. Smoothing alone is unbounded
+     * on a long climb, and an unbounded lag is exactly what walks the ball off
+     * the top or bottom of the screen.
+     */
+    maxElevationLag: 3.2,
   },
 
   world: {
@@ -63,12 +77,23 @@ export const GAME = {
     laneChangeTime: 0.135,
     /** Extra lane changes accepted while one is in flight (input buffering). */
     inputBuffer: 1,
-    /** Peak height of a jump, metres. */
+    /** Peak height of a jump, metres. Gravity is derived from this and jumpTime. */
     jumpHeight: 3.5,
     /** Airborne duration, seconds. Deliberately short — this is not a platformer. */
     jumpTime: 0.62,
-    /** Downward multiplier when the player slams to cut a jump short. */
-    slamGravity: 3.1,
+    /** Downward speed forced by a slam, m/s. Cuts a bad jump short. */
+    slamSpeed: 16,
+    /**
+     * Absolute ceiling on the ball's height above the road, metres. The gravity
+     * model cannot exceed `jumpHeight` on its own; this is a structural backstop
+     * so no future change to the arc can put the ball outside the shot.
+     */
+    maxHeight: 4.2,
+    /**
+     * Depth below the road at which the ball is considered lost. Only reachable
+     * over a chasm, where falling is the intended outcome.
+     */
+    lostBelow: -6,
     /** Seconds of invulnerability after a continue. */
     continueGrace: 1.8,
     /** Lateral distance counted as a near miss. */
