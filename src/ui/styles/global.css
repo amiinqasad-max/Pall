@@ -1,43 +1,86 @@
 /*
- * TARTAN design system.
+ * TARTAN design system — glossy 2.5D arcade.
  *
- * Built mobile-first around a dark navy ground with teal as the structural
- * accent and amber reserved almost exclusively for value — coins, rewards,
- * records. Keeping amber scarce is what makes a coin payout feel like an
- * event rather than another button.
+ * The goal is a menu that feels like it belongs inside the game world rather
+ * than in front of it. Depth comes from four stacked techniques, none of which
+ * needs a shader:
  *
- * Everything is sized in rem against a 16px root, with safe-area insets
- * respected on every fixed edge so nothing sits under a notch or a home bar.
+ *   1. A live parallax ground plane behind everything (MenuBackdrop).
+ *   2. Cards that sit on a perspective plane and catch light from above.
+ *   3. Buttons with real physical thickness — a coloured edge under the face
+ *      that compresses when pressed.
+ *   4. Two-part shadows: a tight dark contact shadow plus a wide coloured
+ *      ambient bloom, which is what separates "floating" from "pasted on".
+ *
+ * Performance rules, because this runs on 1GB Android:
+ *   - Animate `transform` and `opacity` only. Both composite on the GPU.
+ *     Nothing here animates box-shadow, filter or backdrop-filter.
+ *   - `backdrop-filter` appears exactly once (the modal scrim). It was
+ *     previously on every panel, which is a full-screen blur per card and the
+ *     single most expensive thing a mobile browser can be asked to do.
+ *   - Gloss and bevel are static gradients baked into the element, so a card
+ *     costs one layer regardless of how three-dimensional it looks.
  */
 
 :root {
-  /* Brand */
-  --navy: #08131a;
-  --navy-raised: #0d1f28;
-  --navy-panel: #102730;
-  --navy-line: #1b3540;
+  /* --- Ground ------------------------------------------------------------ */
+  --navy: #070f18;
+  --navy-deep: #04080e;
+  --navy-raised: #0e1c2a;
+  --navy-panel: #12233440;
+
+  /* --- Brand ------------------------------------------------------------- */
   --teal: #0f766e;
   --teal-bright: #2dd4bf;
-  --teal-dim: #134e4a;
+  --teal-glow: #5eead4;
   --amber: #f59e0b;
   --amber-bright: #fbbf24;
-  --amber-dim: #78350f;
+  --amber-glow: #fde68a;
+
+  /* --- Arcade accents. Scarce by design: one hue owns each surface. ------- */
+  --violet: #8b5cf6;
+  --violet-bright: #a78bfa;
+  --magenta: #ec4899;
+  --cyan: #22d3ee;
+  --lime: #a3e635;
+
   --white: #f8fafc;
   --grey: #94a3b8;
   --grey-dim: #64748b;
   --danger: #f43f5e;
   --success: #34d399;
-  --epic: #a855f7;
+
+  /* --- Rarity ------------------------------------------------------------ */
+  --rare: #38bdf8;
+  --epic: #c084fc;
   --legendary: #fbbf24;
 
-  /* Surfaces */
-  --surface: rgba(16, 39, 48, 0.86);
-  --surface-solid: #102730;
-  --surface-hi: rgba(45, 212, 191, 0.08);
-  --border: rgba(148, 163, 184, 0.14);
-  --border-hi: rgba(45, 212, 191, 0.32);
+  /* --- Glass surfaces ---------------------------------------------------- */
+  /* A card is a vertical gradient (light at the top, as if lit from above)
+     over a translucent navy. No blur — the gradient does the work. */
+  --glass:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 42%, rgba(255, 255, 255, 0) 100%),
+    linear-gradient(180deg, rgba(23, 44, 62, 0.92) 0%, rgba(13, 26, 38, 0.94) 100%);
+  --glass-raised:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 40%, rgba(255, 255, 255, 0) 100%),
+    linear-gradient(180deg, rgba(30, 56, 76, 0.95) 0%, rgba(16, 32, 46, 0.96) 100%);
 
-  /* Type scale */
+  /* Bevel: a bright top inner edge and a dark bottom one. This single pair of
+     inset shadows is what makes a rectangle read as a moulded object. */
+  --bevel:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+  /* Contact shadow + ambient bloom. */
+  --lift-1: 0 2px 6px rgba(0, 0, 0, 0.4), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --lift-2: 0 4px 10px rgba(0, 0, 0, 0.45), 0 18px 42px -12px rgba(0, 0, 0, 0.6);
+  --lift-3: 0 8px 18px rgba(0, 0, 0, 0.5), 0 30px 70px -18px rgba(0, 0, 0, 0.7);
+
+  --border: rgba(148, 163, 184, 0.16);
+  --border-hi: rgba(94, 234, 212, 0.42);
+
+  /* --- Type -------------------------------------------------------------- */
   --fs-xs: 0.6875rem;
   --fs-sm: 0.8125rem;
   --fs-md: 0.9375rem;
@@ -46,7 +89,6 @@
   --fs-2xl: 2rem;
   --fs-3xl: 2.75rem;
 
-  /* Spacing */
   --sp-1: 0.25rem;
   --sp-2: 0.5rem;
   --sp-3: 0.75rem;
@@ -54,22 +96,21 @@
   --sp-5: 1.5rem;
   --sp-6: 2rem;
 
-  --radius-sm: 0.5rem;
-  --radius: 0.875rem;
-  --radius-lg: 1.25rem;
+  --radius-sm: 0.625rem;
+  --radius: 1rem;
+  --radius-lg: 1.375rem;
+  --radius-xl: 1.75rem;
   --radius-pill: 999px;
-
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-glow: 0 0 24px rgba(45, 212, 191, 0.25);
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
+  /* Springy for anything a finger touched; smooth for anything the system did. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1);
 }
 
 * {
@@ -85,7 +126,7 @@ body,
 }
 
 body {
-  background: var(--navy);
+  background: var(--navy-deep);
   color: var(--white);
   font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: var(--fs-md);
@@ -111,18 +152,132 @@ input {
   color: inherit;
 }
 
-/* ---------------------------------------------------------------- app shell */
+/* ============================================================== app shell */
 
 .app {
   position: relative;
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(120% 70% at 50% -10%, rgba(15, 118, 110, 0.24) 0%, transparent 60%),
-    radial-gradient(90% 60% at 80% 110%, rgba(245, 158, 11, 0.1) 0%, transparent 55%),
-    var(--navy);
+  background: var(--navy-deep);
+  /* The perspective root. Every card below inherits this camera, so a tilt is
+     a real projection rather than a fake skew. */
+  perspective: 1400px;
+  perspective-origin: 50% 42%;
 }
+
+/* --------------------------------------------------------- menu backdrop */
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.backdrop__sky {
+  position: absolute;
+  inset: -10%;
+  background:
+    radial-gradient(70% 50% at 50% 8%, rgba(45, 212, 191, 0.16) 0%, transparent 62%),
+    radial-gradient(60% 45% at 12% 78%, rgba(139, 92, 246, 0.16) 0%, transparent 60%),
+    radial-gradient(55% 40% at 88% 62%, rgba(236, 72, 153, 0.12) 0%, transparent 58%),
+    linear-gradient(180deg, #0a1624 0%, #060d16 55%, #04080e 100%);
+  will-change: transform;
+}
+
+/* Aurora ribbons: two very large, very soft blobs on slow independent orbits.
+   Blur is baked into the gradient rather than applied as a filter. */
+.backdrop__aurora {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  height: 55%;
+  top: 6%;
+  background:
+    radial-gradient(45% 60% at 30% 50%, rgba(45, 212, 191, 0.22) 0%, transparent 70%),
+    radial-gradient(40% 55% at 72% 45%, rgba(167, 139, 250, 0.2) 0%, transparent 70%);
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(-3%, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(3%, 2%, 0) scale(1.08);
+  }
+}
+
+.backdrop__stars {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  animation: star-twinkle 9s ease-in-out infinite alternate;
+}
+
+/* The entire field is one dot wearing a long box-shadow list — see
+   MenuBackdrop.buildStars. One node, one paint. */
+.backdrop__stars i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* The horizon: a bright line with a glow above it, echoing the track's
+   vanishing point so the menus sit in the same world as the game. */
+.backdrop__horizon {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: 22%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.55), transparent);
+  box-shadow: 0 0 40px 12px rgba(45, 212, 191, 0.16);
+  will-change: transform;
+}
+
+/* A receding grid floor. Perspective-transformed so it genuinely converges. */
+.backdrop__floor {
+  position: absolute;
+  left: -60%;
+  right: -60%;
+  bottom: -30%;
+  height: 60%;
+  background-image:
+    linear-gradient(rgba(94, 234, 212, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 234, 212, 0.1) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(320px) rotateX(62deg);
+  transform-origin: 50% 0%;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, transparent 72%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, transparent 72%);
+  animation: floor-scroll 3.2s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes floor-scroll {
+  to {
+    background-position: 0 64px, 0 0;
+  }
+}
+
+/* ================================================================ screens */
 
 .screen {
   position: absolute;
@@ -130,35 +285,44 @@ input {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Deliberately no z-index: an explicit one here would trap every overlay the
+     screen renders inside a stacking context of its own, and the nav dock —
+     a sibling at z-index 20 — would then paint over open modals. Tree order
+     alone already puts the screen above the backdrop. */
 }
 
-/* Scrollable screen body. touch-action is re-enabled here only — the rest of
-   the app blocks it so a swipe during play never scrolls the page. */
 .screen__body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  /* The bottom padding clears the floating nav bar plus the home indicator. */
-  padding: 0 var(--sp-4) calc(6rem + var(--safe-bottom));
+  padding: 0 var(--sp-4) calc(7rem + var(--safe-bottom));
   padding-left: calc(var(--sp-4) + var(--safe-left));
   padding-right: calc(var(--sp-4) + var(--safe-right));
   scrollbar-width: none;
+  /* Children lift toward the viewer, so the scroller needs its own 3D context. */
+  transform-style: preserve-3d;
+  perspective: 1200px;
 }
 
 .screen__body::-webkit-scrollbar {
   display: none;
 }
 
+/* Screens arrive from slightly below and behind the camera.
+
+   No `both` fill: a filled animation keeps `transform` at an identity matrix
+   rather than `none`, and any transform — identity included — opens a stacking
+   context, which would bury every modal the screen renders under the nav dock. */
 .screen-enter {
-  animation: screen-in 0.28s var(--ease-out) both;
+  animation: screen-in 0.42s var(--ease-out);
 }
 
 @keyframes screen-in {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.995);
+    transform: translate3d(0, 18px, -60px) rotateX(4deg);
   }
   to {
     opacity: 1;
@@ -166,7 +330,7 @@ input {
   }
 }
 
-/* ------------------------------------------------------------------- header */
+/* ================================================================= header */
 
 .topbar {
   display: flex;
@@ -175,59 +339,78 @@ input {
   padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-4) var(--sp-3);
   padding-left: calc(var(--sp-4) + var(--safe-left));
   padding-right: calc(var(--sp-4) + var(--safe-right));
+  position: relative;
+  z-index: 2;
 }
 
 .topbar__title {
   font-size: var(--fs-lg);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   flex: 1;
   min-width: 0;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 }
 
 .topbar__spacer {
   flex: 1;
 }
 
+/* Round 3D control. Same thickness recipe as the buttons, in miniature. */
 .iconbtn {
   display: grid;
   place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.6rem;
+  height: 2.6rem;
   border-radius: var(--radius-pill);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-raised);
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.45), var(--lift-1);
   font-size: 1.05rem;
-  transition: transform 0.14s var(--ease-spring), background 0.18s;
   flex: none;
+  transition: transform 0.16s var(--ease-spring), box-shadow 0.16s;
+  will-change: transform;
 }
 
 .iconbtn:active {
-  transform: scale(0.9);
-  background: var(--surface-hi);
+  transform: translateY(3px);
+  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.45), var(--lift-1);
 }
 
-/* --------------------------------------------------------------- brandmark */
+/* ============================================================== brandmark */
 
 .brandmark {
-  font-weight: 800;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
-  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 55%, var(--teal) 100%);
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  background: linear-gradient(180deg, #ffffff 0%, #a5f3fc 42%, var(--teal-bright) 72%, var(--teal) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  filter: drop-shadow(0 3px 14px rgba(45, 212, 191, 0.45));
 }
 
-/* ------------------------------------------------------------------ panels */
+/* ================================================================== cards */
 
 .panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  position: relative;
+  background: var(--glass);
   border-radius: var(--radius-lg);
   padding: var(--sp-4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--bevel), var(--lift-2);
+  /* Isolate layout and paint so a card animating never reflows its siblings. */
+  contain: layout paint style;
+  transform-style: preserve-3d;
+}
+
+/* The gloss: a single specular sweep across the top third. */
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 46%;
+  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
 }
 
 .panel--flush {
@@ -235,9 +418,57 @@ input {
   overflow: hidden;
 }
 
+/* An accent card gets a coloured ambient bloom under it, which is what makes
+   it read as emitting light rather than merely being brighter. */
 .panel--accent {
-  border-color: var(--border-hi);
-  box-shadow: var(--shadow-glow);
+  background: var(--glass-raised);
+  box-shadow:
+    var(--bevel),
+    inset 0 0 0 1px var(--border-hi),
+    0 4px 12px rgba(0, 0, 0, 0.45),
+    0 20px 48px -14px rgba(45, 212, 191, 0.4);
+}
+
+.panel--violet {
+  box-shadow:
+    var(--bevel),
+    inset 0 0 0 1px rgba(167, 139, 250, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.45),
+    0 20px 48px -14px rgba(139, 92, 246, 0.42);
+}
+
+.panel--amber {
+  box-shadow:
+    var(--bevel),
+    inset 0 0 0 1px rgba(251, 191, 36, 0.38),
+    0 4px 12px rgba(0, 0, 0, 0.45),
+    0 20px 48px -14px rgba(245, 158, 11, 0.4);
+}
+
+/* Cards drift, very slightly and out of phase, so a still screen still
+   breathes. Transform-only, so it composites for free. */
+.panel--float {
+  animation: card-float 6s ease-in-out infinite;
+}
+
+.panel--float:nth-of-type(2n) {
+  animation-duration: 7.4s;
+  animation-delay: -2.1s;
+}
+
+.panel--float:nth-of-type(3n) {
+  animation-duration: 8.2s;
+  animation-delay: -4.3s;
+}
+
+@keyframes card-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -4px, 6px);
+  }
 }
 
 .panel__head {
@@ -250,11 +481,14 @@ input {
 
 .panel__title {
   font-size: var(--fs-sm);
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--grey);
+  color: var(--teal-glow);
+  text-shadow: 0 0 14px rgba(94, 234, 212, 0.4);
 }
+
+/* ================================================================ layout */
 
 .stack {
   display: flex;
@@ -291,23 +525,18 @@ input {
 .muted {
   color: var(--grey);
 }
-
 .dim {
   color: var(--grey-dim);
 }
-
 .tiny {
   font-size: var(--fs-xs);
 }
-
 .small {
   font-size: var(--fs-sm);
 }
-
 .strong {
   font-weight: 700;
 }
-
 .center {
   text-align: center;
 }
@@ -317,55 +546,133 @@ input {
   font-feature-settings: 'tnum';
 }
 
-/* ----------------------------------------------------------------- buttons */
+/* ================================================================ buttons */
 
+/*
+ * The thickness is a solid shadow directly under the face — no blur, no
+ * offset sideways. Pressing translates the face down by exactly that
+ * thickness and shrinks the shadow to zero, so the button visibly compresses
+ * against the surface instead of just getting darker.
+ */
 .btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
   padding: 0.85rem 1.25rem;
   border-radius: var(--radius);
-  font-weight: 700;
+  font-weight: 800;
   font-size: var(--fs-md);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  transition: transform 0.12s var(--ease-spring), filter 0.16s, opacity 0.16s;
-  min-height: 2.9rem;
+  letter-spacing: 0.01em;
+  min-height: 3rem;
   text-align: center;
+  overflow: hidden;
+  background: var(--glass-raised);
+  color: var(--white);
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.5), var(--lift-1);
+  transition:
+    transform 0.14s var(--ease-snap),
+    box-shadow 0.14s var(--ease-snap),
+    opacity 0.16s;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Specular highlight across the upper half of the face. */
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 48%;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 50% 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.965);
-  filter: brightness(1.1);
+  transform: translateY(4px);
+  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .btn:disabled {
-  opacity: 0.42;
+  /* Not merely a faded version of the live button: an amber call-to-action at
+     40% opacity reads as a muddy olive, which looks broken rather than
+     unavailable. Disabled controls drop back to inert glass. */
   cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--grey-dim);
+  box-shadow: inset 0 0 0 1px var(--border), 0 2px 0 rgba(0, 0, 0, 0.3);
+  text-shadow: none;
+}
+
+.btn:disabled::before {
+  opacity: 0;
 }
 
 .btn--primary {
-  background: linear-gradient(135deg, var(--teal-bright) 0%, var(--teal) 100%);
-  border-color: transparent;
+  background: linear-gradient(180deg, #5eead4 0%, var(--teal-bright) 38%, #0d9488 100%);
   color: #04211f;
-  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2),
+    0 5px 0 #0b5f59,
+    0 12px 26px -6px rgba(45, 212, 191, 0.55);
+}
+
+.btn--primary:active:not(:disabled) {
+  transform: translateY(5px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 0 0 #0b5f59,
+    0 4px 12px -4px rgba(45, 212, 191, 0.5);
 }
 
 .btn--amber {
-  background: linear-gradient(135deg, var(--amber-bright) 0%, var(--amber) 100%);
-  border-color: transparent;
+  background: linear-gradient(180deg, #fde68a 0%, var(--amber-bright) 38%, #d97706 100%);
   color: #2a1a03;
-  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.18),
+    0 5px 0 #a95d06,
+    0 12px 26px -6px rgba(245, 158, 11, 0.55);
+}
+
+.btn--amber:active:not(:disabled) {
+  transform: translateY(5px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 0 0 #a95d06,
+    0 4px 12px -4px rgba(245, 158, 11, 0.5);
+}
+
+.btn--violet {
+  background: linear-gradient(180deg, #ddd6fe 0%, var(--violet-bright) 38%, #7c3aed 100%);
+  color: #1e1035;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 5px 0 #5b21b6,
+    0 12px 26px -6px rgba(139, 92, 246, 0.55);
+}
+
+.btn--violet:active:not(:disabled) {
+  transform: translateY(5px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 #5b21b6, 0 4px 12px -4px rgba(139, 92, 246, 0.5);
 }
 
 .btn--ghost {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--border), 0 3px 0 rgba(0, 0, 0, 0.35), var(--lift-1);
+}
+
+.btn--ghost::before {
+  opacity: 0.4;
 }
 
 .btn--danger {
-  border-color: rgba(244, 63, 94, 0.4);
-  color: #fda4af;
+  background: linear-gradient(180deg, #fecdd3 0%, #fb7185 40%, #be123c 100%);
+  color: #3f0716;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 5px 0 #881337, 0 12px 26px -6px rgba(244, 63, 94, 0.45);
 }
 
 .btn--block {
@@ -373,87 +680,121 @@ input {
 }
 
 .btn--lg {
-  padding: 1.1rem 1.5rem;
+  padding: 1.05rem 1.5rem;
   font-size: var(--fs-lg);
-  min-height: 3.5rem;
+  min-height: 3.6rem;
+  border-radius: var(--radius-lg);
 }
 
 .btn--sm {
   padding: 0.5rem 0.85rem;
   font-size: var(--fs-sm);
-  min-height: 2.25rem;
+  min-height: 2.4rem;
   border-radius: var(--radius-sm);
 }
 
-/* The primary play button — the one thing on the home screen that should
-   pull the eye before anything else. */
+/* --------------------------------------------------------- the play button */
+
 .playbtn {
   position: relative;
   width: 100%;
-  padding: 1.35rem;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--teal-bright) 0%, var(--teal) 60%, #0b5b55 100%);
-  color: #04211f;
-  font-size: 1.35rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  box-shadow: 0 14px 40px rgba(15, 118, 110, 0.4);
+  padding: 1.5rem;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(155deg, #5eead4 0%, #2dd4bf 32%, #14b8a6 62%, #0d9488 100%);
+  color: #032c28;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
   overflow: hidden;
-  transition: transform 0.14s var(--ease-spring);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    0 8px 0 #0b5f59,
+    0 20px 44px -10px rgba(45, 212, 191, 0.6);
+  transition: transform 0.16s var(--ease-snap), box-shadow 0.16s var(--ease-snap);
+  will-change: transform;
+  animation: play-breathe 3.6s ease-in-out infinite;
 }
 
 .playbtn:active {
-  transform: scale(0.975);
+  transform: translateY(7px) scale(0.995);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.7), 0 1px 0 #0b5f59, 0 6px 18px -6px rgba(45, 212, 191, 0.5);
+  animation: none;
 }
 
+@keyframes play-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.008);
+  }
+}
+
+/* A specular band sweeping across the face. */
 .playbtn::after {
   content: '';
   position: absolute;
-  top: 0;
+  top: -20%;
   left: -60%;
   width: 40%;
-  height: 100%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-  animation: sheen 3.4s ease-in-out infinite;
+  height: 140%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: skewX(-18deg);
+  animation: sheen 3.6s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes sheen {
   0%,
-  62% {
-    transform: translateX(0);
+  58% {
+    transform: translateX(0) skewX(-18deg);
   }
   100% {
-    transform: translateX(420%);
+    transform: translateX(420%) skewX(-18deg);
   }
 }
 
-/* -------------------------------------------------------------------- chips */
+/* ================================================================== chips */
 
 .chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 0.4rem 0.75rem;
+  padding: 0.45rem 0.8rem;
   border-radius: var(--radius-pill);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-raised);
   font-size: var(--fs-sm);
-  font-weight: 700;
+  font-weight: 800;
   white-space: nowrap;
+  box-shadow: var(--bevel), 0 2px 0 rgba(0, 0, 0, 0.4), var(--lift-1);
 }
 
 .chip--coin {
-  border-color: rgba(245, 158, 11, 0.3);
-  color: var(--amber-bright);
+  color: #2a1a03;
+  background: linear-gradient(180deg, #fde68a 0%, var(--amber-bright) 45%, #d97706 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 3px 0 #a95d06,
+    0 10px 22px -6px rgba(245, 158, 11, 0.5);
 }
 
 .chip--level {
-  border-color: rgba(45, 212, 191, 0.28);
-  color: var(--teal-bright);
+  color: #04211f;
+  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 45%, #0d9488 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 3px 0 #0b5f59,
+    0 10px 22px -6px rgba(45, 212, 191, 0.45);
 }
 
 .chip--pop {
-  animation: chip-pop 0.5s var(--ease-spring);
+  animation: chip-pop 0.55s var(--ease-spring);
 }
 
 @keyframes chip-pop {
@@ -461,7 +802,7 @@ input {
     transform: scale(1);
   }
   35% {
-    transform: scale(1.16);
+    transform: scale(1.2) translateY(-2px);
   }
   100% {
     transform: scale(1);
@@ -469,27 +810,42 @@ input {
 }
 
 .badge {
-  padding: 0.15rem 0.5rem;
+  padding: 0.18rem 0.55rem;
   border-radius: var(--radius-pill);
   font-size: var(--fs-xs);
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .badge--new {
-  background: var(--danger);
+  background: linear-gradient(180deg, #fb7185, #be123c);
   color: white;
 }
 
 .badge--ready {
-  background: var(--amber);
+  background: linear-gradient(180deg, #fde68a, #d97706);
   color: #2a1a03;
+  animation: badge-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.06);
+    filter: brightness(1.15);
+  }
 }
 
 .badge--done {
-  background: rgba(52, 211, 153, 0.16);
+  background: rgba(52, 211, 153, 0.18);
   color: var(--success);
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.35);
 }
 
 .dot {
@@ -498,118 +854,260 @@ input {
   border-radius: 50%;
   background: var(--amber);
   flex: none;
-  box-shadow: 0 0 8px var(--amber);
+  box-shadow: 0 0 10px var(--amber);
 }
 
-/* ------------------------------------------------------------------ meters */
+/* ================================================================= meters */
 
 .meter {
-  height: 0.5rem;
+  position: relative;
+  height: 0.7rem;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.3));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7), inset 0 -1px 0 rgba(255, 255, 255, 0.07);
   overflow: hidden;
 }
 
 .meter__fill {
+  position: relative;
   height: 100%;
   border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, var(--teal), var(--teal-bright));
-  transition: width 0.5s var(--ease-out);
+  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 45%, var(--teal) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 0 14px rgba(45, 212, 191, 0.6);
+  transition: width 0.7s var(--ease-out);
+}
+
+/* A travelling highlight, so a filled bar still reads as energised. */
+.meter__fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.45) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: meter-shine 2.6s ease-in-out infinite;
+}
+
+@keyframes meter-shine {
+  0%,
+  55% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 .meter__fill--amber {
-  background: linear-gradient(90deg, var(--amber-dim), var(--amber-bright));
+  background: linear-gradient(180deg, #fde68a 0%, var(--amber-bright) 45%, var(--amber) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 14px rgba(245, 158, 11, 0.6);
 }
 
 .meter--thin {
-  height: 0.3rem;
+  height: 0.4rem;
 }
 
-/* -------------------------------------------------------------------- nav */
+/* =================================================================== nav */
 
+/* A floating dock: detached from the screen edge, with its own thickness. */
 .nav {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: calc(var(--safe-bottom) + 0.65rem);
+  left: max(var(--sp-3), var(--safe-left));
+  right: max(var(--sp-3), var(--safe-right));
   z-index: 20;
   display: flex;
   gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
-  padding-bottom: calc(var(--sp-2) + var(--safe-bottom));
-  background: rgba(8, 19, 26, 0.9);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border-top: 1px solid var(--border);
+  padding: 0.4rem;
+  border-radius: var(--radius-xl);
+  background: var(--glass-raised);
+  box-shadow: var(--bevel), 0 6px 0 rgba(0, 0, 0, 0.45), var(--lift-3);
 }
 
 .nav__item {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: var(--sp-2) 0;
+  gap: 3px;
+  padding: 0.5rem 0 0.45rem;
   border-radius: var(--radius);
   color: var(--grey-dim);
   font-size: var(--fs-xs);
-  font-weight: 600;
-  transition: color 0.16s, background 0.16s, transform 0.12s;
-  position: relative;
+  font-weight: 700;
+  transition: color 0.2s, transform 0.16s var(--ease-spring);
+  will-change: transform;
 }
 
 .nav__item--active {
-  color: var(--teal-bright);
-  background: var(--surface-hi);
+  color: #04211f;
+  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 50%, #0d9488 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 3px 0 #0b5f59, 0 8px 20px -6px rgba(45, 212, 191, 0.55);
+  transform: translateY(-3px);
 }
 
 .nav__item:active {
-  transform: scale(0.94);
+  transform: translateY(2px) scale(0.96);
 }
 
 .nav__icon {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   line-height: 1;
 }
 
 .nav__dot {
   position: absolute;
-  top: 0.35rem;
-  right: 22%;
-  width: 0.45rem;
-  height: 0.45rem;
+  top: 0.3rem;
+  right: 20%;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
-  background: var(--amber);
+  background: linear-gradient(180deg, #fde68a, #d97706);
+  box-shadow: 0 0 8px var(--amber);
+  animation: badge-pulse 1.6s ease-in-out infinite;
 }
 
-/* ------------------------------------------------------------------ tabs */
+/* ================================================================== tabs */
 
 .tabs {
   display: flex;
-  gap: var(--sp-1);
-  padding: 0.25rem;
-  background: rgba(255, 255, 255, 0.05);
+  gap: 0.2rem;
+  padding: 0.3rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.25));
   border-radius: var(--radius-pill);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.6);
   margin-bottom: var(--sp-4);
 }
 
 .tabs__tab {
   flex: 1;
-  padding: 0.55rem 0.5rem;
+  padding: 0.6rem 0.5rem;
   border-radius: var(--radius-pill);
   font-size: var(--fs-sm);
-  font-weight: 700;
+  font-weight: 800;
   color: var(--grey);
-  transition: background 0.2s, color 0.2s;
+  transition: color 0.2s, transform 0.16s var(--ease-spring);
 }
 
 .tabs__tab--active {
-  background: var(--surface-solid);
-  color: var(--white);
-  box-shadow: var(--shadow-sm);
+  color: #04211f;
+  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 50%, #0d9488 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 3px 0 #0b5f59, 0 6px 16px -6px rgba(45, 212, 191, 0.5);
 }
 
-/* ------------------------------------------------------------------- HUD */
+.tabs__tab:active {
+  transform: scale(0.95);
+}
+
+/* ============================================================== controls */
+
+/* A physical switch: a recessed track with a knob that has real thickness and
+   throws a coloured glow when it is on. Native checkboxes were the last thing
+   in the app that looked like a web form. */
+.switch {
+  position: relative;
+  flex: none;
+  width: 3.1rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.28));
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: background 0.22s var(--ease-out), box-shadow 0.22s var(--ease-out);
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.switch__knob {
+  position: absolute;
+  top: 0.18rem;
+  left: 0.18rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f8fafc 0%, #cbd5e1 55%, #94a3b8 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 rgba(0, 0, 0, 0.45), 0 5px 10px -3px rgba(0, 0, 0, 0.7);
+  transition: transform 0.22s var(--ease-spring);
+  will-change: transform;
+}
+
+.switch--on {
+  background: linear-gradient(180deg, #0d9488, #115e59);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(94, 234, 212, 0.4),
+    0 0 18px -4px rgba(45, 212, 191, 0.65);
+}
+
+.switch--on .switch__knob {
+  transform: translateX(1.35rem);
+  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 60%, #2dd4bf 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 #0b5f59, 0 6px 14px -3px rgba(45, 212, 191, 0.8);
+}
+
+.switch input:focus-visible + .switch__knob {
+  outline: 2px solid var(--teal-glow);
+  outline-offset: 2px;
+}
+
+/* The slider. `--fill` is written by React as a percentage, so the filled part
+   of the track is a plain gradient stop rather than a second element. */
+.slider {
+  --fill: 50%;
+  width: 100%;
+  height: 1.4rem;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 0.55rem;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(90deg, #5eead4 0%, var(--teal-bright) var(--fill), rgba(255, 255, 255, 0.07) var(--fill));
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.65), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.slider::-moz-range-track {
+  height: 0.55rem;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(90deg, #5eead4 0%, var(--teal-bright) var(--fill), rgba(255, 255, 255, 0.07) var(--fill));
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.65);
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: -0.4rem;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 55%, #2dd4bf 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 #0b5f59, 0 6px 14px -4px rgba(45, 212, 191, 0.8);
+}
+
+.slider::-moz-range-thumb {
+  width: 1.35rem;
+  height: 1.35rem;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 55%, #2dd4bf 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 #0b5f59, 0 6px 14px -4px rgba(45, 212, 191, 0.8);
+}
+
+.slider:disabled {
+  cursor: not-allowed;
+}
+
+/* =================================================================== HUD */
 
 .hud {
   position: absolute;
@@ -629,20 +1127,26 @@ input {
     calc(var(--sp-4) + var(--safe-left));
 }
 
+/* The score is the one piece of type in the game that should feel embossed. */
 .hud__score {
   font-size: var(--fs-2xl);
-  font-weight: 800;
+  font-weight: 900;
   line-height: 1;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
   font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #d1fae5 55%, #5eead4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 16px rgba(94, 234, 212, 0.4));
 }
 
 .hud__sub {
   font-size: var(--fs-xs);
   color: var(--grey);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin-top: 2px;
+  margin-top: 3px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
 
 .hud__right {
@@ -653,39 +1157,48 @@ input {
   gap: var(--sp-2);
 }
 
+.hud__right > .small,
+.hud__right > .tiny {
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+}
+
 .hud__pause {
   pointer-events: auto;
 }
 
 .hud__stage {
   position: absolute;
-  top: 34%;
+  top: 32%;
   left: 0;
   right: 0;
   text-align: center;
   font-size: var(--fs-xl);
-  font-weight: 800;
-  letter-spacing: 0.24em;
-  color: var(--teal-bright);
-  text-shadow: 0 0 24px rgba(45, 212, 191, 0.6);
-  animation: stage-flash 1.5s var(--ease-out) forwards;
+  font-weight: 900;
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
+  background: linear-gradient(180deg, #ffffff, #5eead4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 22px rgba(45, 212, 191, 0.8));
+  animation: stage-flash 1.6s var(--ease-out) forwards;
 }
 
 @keyframes stage-flash {
   0% {
     opacity: 0;
-    transform: scale(0.85);
+    transform: scale(0.8) translateZ(-40px);
   }
   22% {
     opacity: 1;
     transform: scale(1);
   }
-  70% {
+  72% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: scale(1.08);
+    transform: scale(1.1);
   }
 }
 
@@ -694,10 +1207,10 @@ input {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 5rem;
-  font-weight: 800;
+  font-size: 5.5rem;
+  font-weight: 900;
   color: var(--white);
-  text-shadow: 0 0 40px rgba(45, 212, 191, 0.7);
+  filter: drop-shadow(0 0 40px rgba(45, 212, 191, 0.9));
 }
 
 .hud__countdown span {
@@ -708,7 +1221,7 @@ input {
 @keyframes count-pop {
   0% {
     opacity: 0;
-    transform: scale(1.7);
+    transform: scale(2) translateZ(0);
   }
   40% {
     opacity: 1;
@@ -716,20 +1229,24 @@ input {
   }
   100% {
     opacity: 0.9;
-    transform: scale(0.96);
+    transform: scale(0.95);
   }
 }
 
 .hud__chain {
   position: absolute;
-  bottom: 18%;
+  bottom: 20%;
   left: 0;
   right: 0;
   text-align: center;
-  font-weight: 800;
-  color: var(--amber-bright);
+  font-weight: 900;
   font-size: var(--fs-lg);
-  text-shadow: 0 0 18px rgba(245, 158, 11, 0.6);
+  letter-spacing: 0.1em;
+  background: linear-gradient(180deg, #fff7cd, var(--amber));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 18px rgba(245, 158, 11, 0.8));
 }
 
 .hud__fps {
@@ -743,14 +1260,14 @@ input {
 
 .hud__hint {
   position: absolute;
-  /* Clear of the ball, which sits at 73% of the height. */
   bottom: 7%;
   left: 0;
   right: 0;
   text-align: center;
   color: var(--grey);
   font-size: var(--fs-sm);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
   animation: hint-fade 4s ease forwards;
 }
 
@@ -764,20 +1281,23 @@ input {
   }
 }
 
-/* ------------------------------------------------------------------ sheets */
+/* ============================================================== overlays */
 
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(4, 10, 14, 0.72);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: radial-gradient(80% 60% at 50% 40%, rgba(4, 10, 18, 0.72), rgba(2, 5, 10, 0.92));
+  /* The only backdrop-filter in the system. One full-screen blur is affordable;
+     one per card is not. */
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--sp-4);
   z-index: 40;
-  animation: fade-in 0.2s ease;
+  animation: fade-in 0.22s ease;
+  perspective: 1200px;
 }
 
 @keyframes fade-in {
@@ -789,25 +1309,41 @@ input {
   }
 }
 
+/* Sheets arrive by rotating up into the camera. */
 .sheet {
+  position: relative;
   width: 100%;
   max-width: 26rem;
-  background: linear-gradient(180deg, var(--navy-panel) 0%, var(--navy-raised) 100%);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  background: var(--glass-raised);
+  border-radius: var(--radius-xl);
   padding: var(--sp-5);
-  box-shadow: var(--shadow);
+  box-shadow:
+    var(--bevel),
+    0 8px 0 rgba(0, 0, 0, 0.4),
+    0 40px 90px -20px rgba(0, 0, 0, 0.85),
+    0 0 70px -20px rgba(45, 212, 191, 0.35);
   max-height: 86vh;
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
-  animation: sheet-in 0.3s var(--ease-out);
+  animation: sheet-in 0.42s var(--ease-out);
+  transform-style: preserve-3d;
+}
+
+.sheet::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 42%;
+  border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 @keyframes sheet-in {
   from {
     opacity: 0;
-    transform: translateY(24px) scale(0.97);
+    transform: translate3d(0, 40px, -140px) rotateX(12deg);
   }
   to {
     opacity: 1;
@@ -817,8 +1353,12 @@ input {
 
 .sheet__title {
   font-size: var(--fs-xl);
-  font-weight: 800;
+  font-weight: 900;
   margin: 0 0 var(--sp-1);
+  background: linear-gradient(180deg, #ffffff, #a5f3fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .sheet__sub {
@@ -827,57 +1367,103 @@ input {
   margin: 0 0 var(--sp-4);
 }
 
-/* ------------------------------------------------------------------- store */
+/* The results sheet is the longest panel in the game and the one a player sees
+   most, so it gets more vertical room than a dialog normally would and a
+   warmer bloom to mark it as the reward moment rather than an interruption. */
+.results {
+  max-width: 27rem;
+  max-height: 92vh;
+  box-shadow:
+    var(--bevel),
+    0 8px 0 rgba(0, 0, 0, 0.4),
+    0 40px 90px -20px rgba(0, 0, 0, 0.85),
+    0 0 90px -18px rgba(45, 212, 191, 0.42);
+}
+
+/* ================================================================= store */
 
 .cosmetic {
   position: relative;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
   padding: var(--sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  transition: border-color 0.2s, transform 0.12s;
   text-align: left;
   width: 100%;
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.42), var(--lift-2);
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s;
+  will-change: transform;
+  contain: layout paint style;
+}
+
+.cosmetic::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 40%;
+  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 45% 45%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 .cosmetic:active {
-  transform: scale(0.98);
+  transform: translateY(4px) scale(0.985);
+  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.42), var(--lift-1);
 }
 
 .cosmetic--equipped {
-  border-color: var(--teal-bright);
-  box-shadow: var(--shadow-glow);
+  box-shadow:
+    var(--bevel),
+    inset 0 0 0 1.5px var(--teal-bright),
+    0 4px 0 #0b5f59,
+    0 18px 40px -12px rgba(45, 212, 191, 0.5);
 }
 
 .cosmetic--locked {
-  opacity: 0.72;
+  opacity: 0.78;
 }
 
+/* The orb: a shaded sphere in CSS. The inner shadow does the volume, the
+   pseudo-element does the specular, and the drop shadow grounds it. */
 .cosmetic__orb {
   width: 100%;
   aspect-ratio: 1;
   border-radius: 50%;
   position: relative;
   margin-bottom: var(--sp-1);
-  box-shadow: inset -6px -8px 18px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset -8px -10px 22px rgba(0, 0, 0, 0.55),
+    inset 4px 4px 14px rgba(255, 255, 255, 0.22),
+    0 10px 22px -8px rgba(0, 0, 0, 0.8);
+  animation: orb-float 5s ease-in-out infinite;
+}
+
+@keyframes orb-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
 }
 
 .cosmetic__orb::after {
   content: '';
   position: absolute;
-  top: 16%;
-  left: 20%;
-  width: 34%;
+  top: 13%;
+  left: 18%;
+  width: 36%;
   height: 30%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.9), transparent 70%);
+  background: radial-gradient(circle at 40% 40%, rgba(255, 255, 255, 0.95), transparent 72%);
+  filter: blur(1px);
 }
 
 .cosmetic__name {
-  font-weight: 700;
+  font-weight: 800;
   font-size: var(--fs-sm);
 }
 
@@ -887,10 +1473,20 @@ input {
 }
 
 .cosmetic__trail {
-  height: 2.25rem;
-  border-radius: var(--radius-sm);
+  height: 2.5rem;
+  border-radius: var(--radius);
   position: relative;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.cosmetic__trail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.4) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: meter-shine 3.4s ease-in-out infinite;
 }
 
 .rarity {
@@ -898,60 +1494,79 @@ input {
   top: var(--sp-2);
   right: var(--sp-2);
   font-size: 0.5625rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 900;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  padding: 0.1rem 0.4rem;
+  padding: 0.15rem 0.45rem;
   border-radius: var(--radius-pill);
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  z-index: 1;
 }
 
 .rarity--rare {
-  color: #7dd3fc;
+  color: var(--rare);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.5), 0 0 12px rgba(56, 189, 248, 0.35);
 }
 .rarity--epic {
-  color: #d8b4fe;
+  color: var(--epic);
+  box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.5), 0 0 12px rgba(192, 132, 252, 0.35);
 }
 .rarity--legendary {
-  color: var(--amber-bright);
+  color: var(--legendary);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.55), 0 0 14px rgba(251, 191, 36, 0.45);
 }
 .rarity--standard {
   color: var(--grey);
 }
 
-/* --------------------------------------------------------------- listrows */
+/* ============================================================== list rows */
 
 .listrow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3);
   border-radius: var(--radius);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.35), var(--lift-1);
+  transition: transform 0.16s var(--ease-spring);
+  contain: layout paint style;
+}
+
+.listrow:active {
+  transform: translateY(3px) scale(0.99);
 }
 
 .listrow--self {
-  border-color: var(--border-hi);
-  background: rgba(45, 212, 191, 0.1);
+  background: var(--glass-raised);
+  box-shadow:
+    var(--bevel),
+    inset 0 0 0 1.5px var(--border-hi),
+    0 3px 0 #0b5f59,
+    0 14px 32px -10px rgba(45, 212, 191, 0.42);
 }
 
 .listrow__rank {
-  width: 2.25rem;
+  width: 2.4rem;
   text-align: center;
-  font-weight: 800;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
   flex: none;
 }
 
 .listrow__rank--1 {
-  color: var(--amber-bright);
+  color: var(--legendary);
+  filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.7));
 }
 .listrow__rank--2 {
   color: #e2e8f0;
+  filter: drop-shadow(0 0 8px rgba(226, 232, 240, 0.5));
 }
 .listrow__rank--3 {
   color: #d97706;
+  filter: drop-shadow(0 0 8px rgba(217, 119, 6, 0.5));
 }
 
 .listrow__main {
@@ -960,41 +1575,52 @@ input {
 }
 
 .listrow__name {
-  font-weight: 700;
+  font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .listrow__score {
-  font-weight: 800;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
   flex: none;
 }
 
-/* -------------------------------------------------------------- gameover */
+/* ============================================================== results */
 
 .result__score {
   font-size: var(--fs-3xl);
-  font-weight: 800;
+  font-weight: 900;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 0%, #d1fae5 50%, #5eead4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 26px rgba(94, 234, 212, 0.5));
 }
 
 .result__label {
   font-size: var(--fs-xs);
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--grey);
 }
 
 .result__record {
-  color: var(--amber-bright);
-  font-weight: 800;
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, #fde68a, #d97706);
+  color: #2a1a03;
+  font-weight: 900;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   font-size: var(--fs-xs);
-  animation: chip-pop 0.6s var(--ease-spring);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 14px -3px rgba(245, 158, 11, 0.7);
+  animation: chip-pop 0.7s var(--ease-spring);
+  margin-bottom: var(--sp-2);
 }
 
 .statgrid {
@@ -1004,8 +1630,15 @@ input {
   text-align: center;
 }
 
+.statgrid > div {
+  padding: var(--sp-2) var(--sp-1);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 .statgrid__value {
-  font-weight: 800;
+  font-weight: 900;
   font-size: var(--fs-md);
   font-variant-numeric: tabular-nums;
 }
@@ -1014,26 +1647,22 @@ input {
   font-size: 0.625rem;
   color: var(--grey-dim);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
 }
 
-/* --------------------------------------------------------- results motion */
-
-/* Stat cells land one at a time. `visibility` rather than `display` keeps the
-   grid's geometry stable so nothing reflows as items arrive. */
 .statcell {
   opacity: 0;
   transform: translateY(8px);
 }
 
 .statcell--in {
-  animation: stat-in 0.42s var(--ease-out) forwards;
+  animation: stat-in 0.44s var(--ease-out) forwards;
 }
 
 @keyframes stat-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.96);
+    transform: translate3d(0, 10px, -30px) scale(0.94);
   }
   to {
     opacity: 1;
@@ -1041,61 +1670,126 @@ input {
   }
 }
 
-.results .result__score {
-  /* Tabular figures stop the score jittering horizontally as it counts. */
-  font-variant-numeric: tabular-nums;
-}
-
 .levelup {
-  animation: levelup-pop 0.7s var(--ease-spring);
+  animation: levelup-pop 0.75s var(--ease-spring);
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 @keyframes levelup-pop {
   0% {
     opacity: 0;
-    transform: scale(0.7);
+    transform: scale(0.6) translateZ(-40px);
   }
   55% {
     opacity: 1;
-    transform: scale(1.12);
+    transform: scale(1.15);
   }
   100% {
     transform: scale(1);
   }
 }
 
-/* Buttons get a real press: a fast scale down, a spring back. */
-.btn:active:not(:disabled) {
-  transform: scale(0.955);
-}
+/* ============================================================ reward burst */
 
-.btn--primary,
-.btn--amber {
+/* Radiating light behind a reward, plus orbiting sparkles. Pure transform. */
+.burst {
   position: relative;
-  overflow: hidden;
+  display: grid;
+  place-items: center;
+  width: 7rem;
+  height: 7rem;
+  margin: 0 auto var(--sp-3);
 }
 
-/* A slow specular sweep across the primary actions. */
-.btn--primary::after,
-.btn--amber::after {
-  content: '';
+.burst--sm {
+  width: 4.75rem;
+  height: 4.75rem;
+  margin-bottom: var(--sp-2);
+}
+
+.burst--sm .burst__core {
+  font-size: 2.1rem;
+}
+
+.burst__rays {
   position: absolute;
-  top: 0;
-  left: -60%;
-  width: 35%;
-  height: 100%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
-  animation: sheen 4.2s ease-in-out infinite;
-  pointer-events: none;
+  inset: -40%;
+  /* Repeating, not a plain conic: a one-off conic holds its last stop for the
+     remaining sweep, which yields two rays and 300° of nothing. */
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(251, 191, 36, 0.26) 0deg 4deg,
+    transparent 4deg 20deg,
+    rgba(94, 234, 212, 0.15) 20deg 23deg,
+    transparent 23deg 45deg
+  );
+  /* Fading the rays out well before the edge keeps them reading as light
+     rather than as a printed starburst. */
+  mask-image: radial-gradient(circle, black 6%, rgba(0, 0, 0, 0.42) 28%, transparent 52%);
+  -webkit-mask-image: radial-gradient(circle, black 6%, rgba(0, 0, 0, 0.42) 28%, transparent 52%);
+  animation: rays-spin 12s linear infinite;
 }
 
-/* ------------------------------------------------------------------ toast */
+@keyframes rays-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.burst__core {
+  position: relative;
+  font-size: 3rem;
+  filter: drop-shadow(0 0 24px rgba(251, 191, 36, 0.9));
+  animation: burst-pop 0.8s var(--ease-spring);
+}
+
+@keyframes burst-pop {
+  0% {
+    transform: scale(0.2) rotate(-25deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.18) rotate(5deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+.sparkle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 10px 2px rgba(253, 230, 138, 0.9);
+  animation: sparkle-out 1.4s var(--ease-out) infinite;
+}
+
+@keyframes sparkle-out {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    transform: translate3d(var(--dx, 40px), var(--dy, -40px), 0) scale(0);
+    opacity: 0;
+  }
+}
+
+/* ================================================================ toasts */
 
 .toasts {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--safe-bottom) + 5.5rem);
+  bottom: calc(var(--safe-bottom) + 6.5rem);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1109,31 +1803,32 @@ input {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 0.65rem 1rem;
+  padding: 0.7rem 1.1rem;
   border-radius: var(--radius-pill);
-  background: rgba(16, 39, 48, 0.96);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  background: var(--glass-raised);
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.45), var(--lift-2);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 700;
   max-width: 100%;
-  animation: toast-in 0.3s var(--ease-spring);
+  animation: toast-in 0.4s var(--ease-spring);
 }
 
 .toast--reward {
-  border-color: rgba(245, 158, 11, 0.4);
-  color: var(--amber-bright);
+  color: #2a1a03;
+  background: linear-gradient(180deg, #fde68a, var(--amber));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 0 #a95d06, 0 12px 28px -8px rgba(245, 158, 11, 0.6);
 }
 
 .toast--error {
-  border-color: rgba(244, 63, 94, 0.4);
-  color: #fda4af;
+  color: #3f0716;
+  background: linear-gradient(180deg, #fecdd3, #fb7185);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 4px 0 #9f1239, 0 12px 28px -8px rgba(244, 63, 94, 0.5);
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(16px) scale(0.95);
+    transform: translate3d(0, 20px, -40px) scale(0.9);
   }
   to {
     opacity: 1;
@@ -1141,33 +1836,38 @@ input {
   }
 }
 
-/* --------------------------------------------------------------- ad panel */
+/* ============================================================== ad panel */
 
 .adpanel {
   text-align: center;
 }
 
 .adpanel__frame {
-  border: 1px dashed rgba(148, 163, 184, 0.35);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: var(--sp-5) var(--sp-4);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.22), inset 0 2px 8px rgba(0, 0, 0, 0.4);
   margin-bottom: var(--sp-4);
 }
 
 .adpanel__timer {
   font-size: var(--fs-2xl);
-  font-weight: 800;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff, #5eead4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-/* ------------------------------------------------------------- game canvas */
+/* ============================================================ game canvas */
 
 .stage {
   position: absolute;
   inset: 0;
   overflow: hidden;
   background: var(--navy);
+  z-index: 0;
 }
 
 .stage canvas {
@@ -1177,7 +1877,7 @@ input {
   touch-action: none;
 }
 
-/* ----------------------------------------------------------------- splash */
+/* ================================================================ splash */
 
 .splash {
   position: absolute;
@@ -1188,9 +1888,7 @@ input {
   justify-content: center;
   gap: var(--sp-5);
   z-index: 80;
-  background:
-    radial-gradient(120% 80% at 50% 0%, rgba(15, 118, 110, 0.22) 0%, transparent 60%),
-    var(--navy);
+  background: radial-gradient(120% 80% at 50% 0%, rgba(15, 118, 110, 0.24) 0%, transparent 60%), var(--navy-deep);
   transition: opacity 0.4s ease;
 }
 
@@ -1203,7 +1901,7 @@ input {
   font-size: clamp(2.5rem, 13vw, 4.25rem);
 }
 
-/* ------------------------------------------------------------- accessible */
+/* ========================================================= accessibility */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1215,13 +1913,10 @@ input {
   }
 }
 
-/* Tall-phone breathing room, and a centred column on tablets/desktop so the
-   game never stretches into an unreadable ultra-wide layout. */
 @media (min-width: 40rem) {
   .app {
     max-width: 30rem;
     margin: 0 auto;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
+    box-shadow: 0 0 120px rgba(0, 0, 0, 0.8);
   }
 }

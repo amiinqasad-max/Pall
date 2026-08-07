@@ -196,13 +196,12 @@ function Toggle({
         <span className="small">{label}</span>
         {hint && <span className="tiny dim" style={{ display: 'block' }}>{hint}</span>}
       </span>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        style={{ width: '1.35rem', height: '1.35rem', accentColor: 'var(--teal-bright)', flex: 'none' }}
-      />
+      {/* The input stays in the DOM and keeps every keyboard and screen-reader
+          behaviour a checkbox has; it is simply invisible over the switch. */}
+      <span className={`switch ${checked ? 'switch--on' : ''}`}>
+        <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+        <span className="switch__knob" />
+      </span>
     </label>
   );
 }
@@ -227,6 +226,7 @@ function Slider({
         <span className="tiny dim numeric">{Math.round(value * 100)}%</span>
       </div>
       <input
+        className="slider"
         type="range"
         min={0}
         max={1}
@@ -235,7 +235,8 @@ function Slider({
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
         onPointerUp={onCommit}
-        style={{ width: '100%', accentColor: 'var(--teal-bright)' }}
+        // The track's fill stop, so the filled part needs no second element.
+        style={{ ['--fill' as string]: `${Math.round(value * 100)}%` }}
       />
     </label>
   );

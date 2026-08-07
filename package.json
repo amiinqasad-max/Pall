@@ -11,6 +11,8 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
+    "ui:tour": "node scripts/ui-tour.mjs",
+    "ui:perf": "node scripts/ui-perf.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "build:standalone": "node scripts/build-standalone.mjs",
     "check": "node scripts/run-checks.mjs",

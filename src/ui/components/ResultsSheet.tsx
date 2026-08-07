@@ -17,7 +17,7 @@ import { AD_REWARDS } from '@/systems/ads';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { useUi } from '@/state/ui';
-import { Button, Meter } from '@/ui/components/primitives';
+import { Button, Meter, RewardBurst } from '@/ui/components/primitives';
 import { useAnimatedNumber, useStagger } from '@/ui/hooks/useAnimatedNumber';
 import { distance as fmtDistance, num } from '@/core/format';
 import { formatDuration } from '@/core/time';
@@ -109,6 +109,11 @@ export function ResultsSheet({
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Run complete">
       <div className="sheet results">
         <div className="center">
+          {/* A record is the one outcome worth its own flourish; every run
+              getting a burst would make none of them feel like an event. */}
+          {summary.newRecord && (
+            <RewardBurst icon="🏆" size="sm" sparkles={!reducedMotion} />
+          )}
           {summary.newRecord && <div className="result__record">New personal best</div>}
           <div className="result__label">Score</div>
           <div className="result__score numeric">{num(score)}</div>

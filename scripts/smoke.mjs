@@ -31,6 +31,10 @@ page.on('console', (msg) => {
 });
 page.on('pageerror', (err) => errors.push(`[pageerror] ${err.message}\n${err.stack ?? ''}`));
 
+// Menu elements drift and breathe by design, so Playwright's built-in
+// stability wait would never be satisfied. The motion is a couple of pixels.
+const press = async (locator) => locator.click({ force: true });
+
 const shot = async (name) => {
   await page.screenshot({ path: `${OUT}/${name}.png` });
   console.log(`— ${name}`);
@@ -42,15 +46,15 @@ await page.waitForTimeout(1600);
 // Dismiss the daily reward.
 const collect = page.locator('button', { hasText: /Collect .* coins/ });
 if (await collect.count()) {
-  await collect.first().click();
+  await press(collect.first());
   await page.waitForTimeout(500);
   const cont = page.locator('button', { hasText: /^Continue$/ });
-  if (await cont.count()) await cont.first().click();
+  if (await cont.count()) await press(cont.first());
   await page.waitForTimeout(400);
 }
 await shot('01-home');
 
-await page.locator('.playbtn').click();
+await press(page.locator('.playbtn'));
 await page.waitForTimeout(900);
 await shot('02-loading-or-countdown');
 
@@ -113,7 +117,7 @@ const hud = await page.evaluate(() => {
 // If the continue offer is up, decline it so we can see the results sheet.
 const endRun = page.locator('button', { hasText: /^End run$/ });
 if (await endRun.count()) {
-  await endRun.first().click();
+  await press(endRun.first());
   await page.waitForTimeout(1200);
   await shot('07-results');
 }

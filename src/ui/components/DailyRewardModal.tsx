@@ -11,7 +11,7 @@ import { useUi } from '@/state/ui';
 import { rewardForStreakDay, rewardLadder } from '@/data/missions';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
-import { Button } from '@/ui/components/primitives';
+import { Button, RewardBurst } from '@/ui/components/primitives';
 import { num } from '@/core/format';
 
 export function DailyRewardModal() {
@@ -30,9 +30,13 @@ export function DailyRewardModal() {
       const timer = setTimeout(() => setOpen(true), 600);
       return () => clearTimeout(timer);
     }
-    if (!available) setOpen(false);
+    // Only retract an *unclaimed* modal. Claiming flips `available` to false
+    // immediately, and closing on that would snatch the reward moment away in
+    // the same frame the player earned it — the "Collected" state, the burst
+    // and the streak line would never be seen at all.
+    if (!available && !claimed) setOpen(false);
     return undefined;
-  }, [screen, available]);
+  }, [screen, available, claimed]);
 
   if (!open) return null;
 
@@ -58,7 +62,11 @@ export function DailyRewardModal() {
         <p className="tiny dim" style={{ letterSpacing: '0.16em', textTransform: 'uppercase', margin: 0 }}>
           Daily reward
         </p>
-        <h2 className="sheet__title" style={{ marginTop: 'var(--sp-2)' }}>
+        {/* The rays keep spinning after the claim; the icon change is what
+            marks the transition, so the moment does not visually reset. */}
+        <RewardBurst icon={claimed ? '✨' : '🎁'} sparkles={claimed !== null} />
+
+        <h2 className="sheet__title" style={{ marginTop: 0 }}>
           {claimed ? 'Collected' : `Day ${nextDay}`}
         </h2>
         <p className="sheet__sub">

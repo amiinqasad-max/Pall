@@ -45,7 +45,7 @@ export function HomeScreen() {
       <div className="screen__body">
         <div className="stack">
           {/* Personal best is the headline number: this is a chase-the-record game. */}
-          <Panel accent>
+          <Panel accent float>
             <div className="row row--between">
               <div>
                 <div className="result__label">Best score</div>
@@ -76,6 +76,8 @@ export function HomeScreen() {
           {/* Daily challenge: same target, same seed, everyone, every day. */}
           <Panel
             title="Daily challenge"
+            tone="amber"
+            float
             action={<span className="tiny dim numeric">{formatCountdown(resetIn)}</span>}
           >
             <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
@@ -106,6 +108,7 @@ export function HomeScreen() {
 
           <Panel
             title="Today's missions"
+            float
             action={
               <span className="tiny dim numeric">
                 {missionsDone} / {daily.length}

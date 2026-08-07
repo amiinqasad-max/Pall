@@ -19,7 +19,7 @@ export function feedback(kind: 'tap' | 'back' | 'toggle' = 'tap'): void {
 interface ButtonProps {
   children: ReactNode;
   onClick?: () => void;
-  variant?: 'default' | 'primary' | 'amber' | 'ghost' | 'danger';
+  variant?: 'default' | 'primary' | 'amber' | 'violet' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   block?: boolean;
   disabled?: boolean;
@@ -91,16 +91,32 @@ export function Panel({
   title,
   action,
   accent,
+  tone,
+  float,
   className = '',
 }: {
   children: ReactNode;
   title?: string;
   action?: ReactNode;
   accent?: boolean;
+  /** Colour of the ambient bloom cast under the card. */
+  tone?: 'teal' | 'violet' | 'amber';
+  /** Slow idle drift, so a card reads as hovering rather than pasted down. */
+  float?: boolean;
   className?: string;
 }) {
+  const classes = [
+    'panel',
+    accent || tone ? 'panel--accent' : '',
+    tone && tone !== 'teal' ? `panel--${tone}` : '',
+    float ? 'panel--float' : '',
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <section className={`panel ${accent ? 'panel--accent' : ''} ${className}`}>
+    <section className={classes}>
       {(title || action) && (
         <header className="panel__head">
           {title && <h2 className="panel__title">{title}</h2>}
@@ -109,6 +125,49 @@ export function Panel({
       )}
       {children}
     </section>
+  );
+}
+
+/**
+ * The reward flourish: rotating light rays, a popping icon, and sparkles thrown
+ * outward on fixed vectors.
+ *
+ * The sparkle directions are computed once rather than randomised per render,
+ * so React never reconciles a changing style object and the animation cannot
+ * restart mid-flight.
+ */
+const SPARKLES = Array.from({ length: 8 }, (_, i) => {
+  const angle = (i / 8) * Math.PI * 2 + 0.4;
+  const reach = 46 + (i % 3) * 12;
+  return {
+    dx: `${Math.round(Math.cos(angle) * reach)}px`,
+    dy: `${Math.round(Math.sin(angle) * reach)}px`,
+    delay: `${(i * 0.11).toFixed(2)}s`,
+  };
+});
+
+export function RewardBurst({
+  icon,
+  sparkles = true,
+  size = 'md',
+}: {
+  icon: string;
+  sparkles?: boolean;
+  size?: 'sm' | 'md';
+}) {
+  return (
+    <div className={`burst ${size === 'sm' ? 'burst--sm' : ''}`} aria-hidden="true">
+      <div className="burst__rays" />
+      {sparkles &&
+        SPARKLES.map((s, i) => (
+          <span
+            key={i}
+            className="sparkle"
+            style={{ ['--dx' as string]: s.dx, ['--dy' as string]: s.dy, animationDelay: s.delay }}
+          />
+        ))}
+      <div className="burst__core">{icon}</div>
+    </div>
   );
 }
 

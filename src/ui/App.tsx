@@ -28,6 +28,7 @@ import { DailyScreen } from '@/ui/screens/DailyScreen';
 import { Toasts } from '@/ui/components/Toasts';
 import { AdOverlay } from '@/ui/components/AdOverlay';
 import { NavBar } from '@/ui/components/NavBar';
+import { MenuBackdrop } from '@/ui/components/MenuBackdrop';
 import { DailyRewardModal } from '@/ui/components/DailyRewardModal';
 import { feedback } from '@/ui/components/primitives';
 import type { ScreenId } from '@/types';
@@ -156,6 +157,11 @@ export function App() {
 
   return (
     <div className="app">
+      {/* Unmounted during a run: the canvas covers it completely, and paying
+          for five composited layers behind an opaque WebGL surface is the kind
+          of cost that only shows up on the phones that can least afford it. */}
+      {screen !== 'play' && <MenuBackdrop />}
+
       <main className="screen screen-enter" key={screen}>
         {screen === 'home' && <HomeScreen />}
         {screen === 'play' && <PlayScreen />}
