@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-ssr/
+.smoke/
+*.local
+
+# Environment — never commit real keys. See .env.example.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+*.log
+npm-debug.log*

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <title>TARTAN — Endless Arcade Runner</title>
+    <meta name="description" content="TARTAN is a premium endless arcade runner. Swipe, survive, and chase the record on a track that never ends." />
+
+    <meta name="theme-color" content="#08131A" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TARTAN" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="TARTAN — Endless Arcade Runner" />
+    <meta property="og:description" content="Swipe, survive, and chase the record on a track that never ends." />
+    <meta property="og:image" content="/icons/social.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <style>
+      /* Critical shell styles — inlined so the splash paints before any JS parses. */
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #08131a;
+        color: #f8fafc;
+        font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+        touch-action: none;
+      }
+      #root { height: 100%; width: 100%; }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background:
+          radial-gradient(120% 80% at 50% 0%, #0f766e33 0%, transparent 60%),
+          radial-gradient(90% 70% at 50% 100%, #f59e0b1a 0%, transparent 55%),
+          #08131a;
+        z-index: 999;
+        transition: opacity 0.45s ease;
+      }
+      #boot.gone { opacity: 0; pointer-events: none; }
+      #boot .mark {
+        font-size: 13vw;
+        max-font-size: 64px;
+        font-weight: 800;
+        letter-spacing: 0.32em;
+        text-indent: 0.32em;
+        background: linear-gradient(180deg, #ffffff 0%, #99f6e4 55%, #0f766e 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      @media (min-width: 520px) { #boot .mark { font-size: 68px; } }
+      #boot .bar {
+        width: 148px;
+        height: 3px;
+        border-radius: 99px;
+        background: #ffffff1a;
+        overflow: hidden;
+      }
+      #boot .bar i {
+        display: block;
+        height: 100%;
+        width: 40%;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #0f766e, #f59e0b);
+        animation: sweep 1.1s ease-in-out infinite;
+      }
+      @keyframes sweep {
+        0% { transform: translateX(-120%); }
+        100% { transform: translateX(320%); }
+      }
+      noscript { color: #94a3b8; text-align: center; padding: 24px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="boot">
+      <div class="mark">TARTAN</div>
+      <div class="bar"><i></i></div>
+      <noscript>TARTAN needs JavaScript enabled to run.</noscript>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

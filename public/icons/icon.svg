@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TARTAN">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#0D222C"/>
+      <stop offset="1" stop-color="#08131A"/>
+    </linearGradient>
+    <radialGradient id="bloom" cx="0.28" cy="0.24" r="0.75">
+      <stop offset="0" stop-color="#0F766E" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#0F766E" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ember" cx="0.8" cy="0.9" r="0.6">
+      <stop offset="0" stop-color="#F59E0B" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#F59E0B" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ball" cx="0.36" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.55" stop-color="#E6FFFB"/>
+      <stop offset="1" stop-color="#3FA79E"/>
+    </radialGradient>
+    <clipPath id="clip"><rect x="16" y="16" width="480" height="480" rx="118"/></clipPath>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="118" fill="url(#plate)"/>
+  <g clip-path="url(#clip)">
+    <rect x="16" y="16" width="480" height="480" fill="url(#bloom)"/>
+    <rect x="16" y="16" width="480" height="480" fill="url(#ember)"/>
+    <path d="M56 352 L296 214 L318 252 L78 390 Z" fill="#0F766E"/>
+    <path d="M96 414 L286 302 L300 326 L110 438 Z" fill="#F59E0B" opacity="0.85"/>
+    <path d="M126 296 L268 214 L278 232 L136 314 Z" fill="#F59E0B" opacity="0.45"/>
+    <circle cx="330" cy="215" r="90" fill="#0F766E" opacity="0.25"/>
+    <circle cx="330" cy="215" r="87" fill="url(#ball)"/>
+  </g>
+  <rect x="24.5" y="24.5" width="463" height="463" rx="110" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="3"/>
+</svg>
