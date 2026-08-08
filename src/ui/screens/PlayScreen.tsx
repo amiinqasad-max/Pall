@@ -292,7 +292,7 @@ export function PlayScreen() {
                 height: '100%',
                 width: '40%',
                 borderRadius: 99,
-                background: 'linear-gradient(90deg, var(--teal), var(--amber))',
+                background: 'linear-gradient(90deg, var(--violet), var(--cyan))',
                 animation: 'sheen 1.1s ease-in-out infinite',
               }}
             />

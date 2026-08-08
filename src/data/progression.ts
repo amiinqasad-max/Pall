@@ -92,16 +92,16 @@ export const ENVIRONMENTS: Environment[] = [
     id: 'env.harbour',
     name: 'Deep Harbour',
     level: 1,
-    blurb: 'Where every run starts. Cold water, warm lights.',
+    blurb: 'Where every run starts. Cosmic dark, violet horizon.',
     palette: {
-      sky: [0x08131a, 0x0d2b33],
-      fog: 0x08131a,
-      road: [0x0e2029, 0x122a34],
-      shoulder: [0x0a1a22, 0x0d2029],
-      rumble: 0x0f766e,
-      lane: 0x2dd4bf,
-      accent: 0xf59e0b,
-      grid: 0x134e4a,
+      sky: [0x050810, 0x0d1030],
+      fog: 0x050810,
+      road: [0x0c0f22, 0x11142e],
+      shoulder: [0x090b1a, 0x0c0f22],
+      rumble: 0x7c3aed,
+      lane: 0x22d3ee,
+      accent: 0x67e8f9,
+      grid: 0x2e1065,
     },
   },
   {
@@ -186,14 +186,22 @@ export interface Badge {
   name: string;
   level: number;
   glyph: string;
+  /** Which rank-emblem treatment renders this badge — see `.rank-badge--*` in global.css. */
+  tone: 'slate' | 'cyan' | 'cyanviolet' | 'violet' | 'violetbright' | 'gold' | 'prism';
 }
 
+/**
+ * Seven-tier competitive rank ladder, spread across the full level curve so the
+ * top tier stays aspirational rather than reachable in a single season.
+ */
 export const BADGES: Badge[] = [
-  { id: 'badge.rookie', name: 'Rookie', level: 1, glyph: '◇' },
-  { id: 'badge.runner', name: 'Runner', level: 6, glyph: '◈' },
-  { id: 'badge.veteran', name: 'Veteran', level: 15, glyph: '❖' },
-  { id: 'badge.elite', name: 'Elite', level: 28, glyph: '✦' },
-  { id: 'badge.legend', name: 'Legend', level: 45, glyph: '✧' },
+  { id: 'badge.rookie', name: 'Rookie', level: 1, glyph: '◇', tone: 'slate' },
+  { id: 'badge.runner', name: 'Runner', level: 6, glyph: '◈', tone: 'cyan' },
+  { id: 'badge.striker', name: 'Striker', level: 15, glyph: '⬡', tone: 'cyanviolet' },
+  { id: 'badge.elite', name: 'Elite', level: 25, glyph: '✦', tone: 'violet' },
+  { id: 'badge.master', name: 'Master', level: 38, glyph: '✪', tone: 'violetbright' },
+  { id: 'badge.legend', name: 'Legend', level: 48, glyph: '✧', tone: 'gold' },
+  { id: 'badge.galaxy', name: 'Galaxy', level: 58, glyph: '✹', tone: 'prism' },
 ];
 
 export function badgeForLevel(level: number): Badge {

@@ -171,8 +171,21 @@ export function RewardBurst({
   );
 }
 
-export function Meter({ value, amber, thin }: { value: number; amber?: boolean; thin?: boolean }) {
+export function Meter({
+  value,
+  amber,
+  complete,
+  thin,
+}: {
+  value: number;
+  /** Reserved for economy-tied progress — the daily challenge pays coins. */
+  amber?: boolean;
+  /** A finished, claimable objective — cyan with a satisfied glow, not gold. */
+  complete?: boolean;
+  thin?: boolean;
+}) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
+  const tone = amber ? 'meter__fill--amber' : complete ? 'meter__fill--complete' : '';
   return (
     <div
       className={`meter ${thin ? 'meter--thin' : ''}`}
@@ -181,7 +194,16 @@ export function Meter({ value, amber, thin }: { value: number; amber?: boolean; 
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <div className={`meter__fill ${amber ? 'meter__fill--amber' : ''}`} style={{ width: `${pct}%` }} />
+      <div className={`meter__fill ${tone}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/** The rank emblem shown on the profile hero card — one of seven tiered treatments. */
+export function RankBadge({ glyph, tone, size = 'md' }: { glyph: string; tone: string; size?: 'md' | 'sm' }) {
+  return (
+    <div className={`rank-badge rank-badge--${tone} ${size === 'sm' ? 'rank-badge--sm' : ''}`} aria-hidden="true">
+      <span className="rank-badge__glyph">{glyph}</span>
     </div>
   );
 }

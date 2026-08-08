@@ -1,16 +1,22 @@
 /*
- * TARTAN design system — glossy 2.5D arcade.
+ * COSMIC RUNNER design system — premium cyber-cosmic HUD.
  *
  * The goal is a menu that feels like it belongs inside the game world rather
  * than in front of it. Depth comes from four stacked techniques, none of which
  * needs a shader:
  *
- *   1. A live parallax ground plane behind everything (MenuBackdrop).
+ *   1. A live parallax starfield behind everything (MenuBackdrop).
  *   2. Cards that sit on a perspective plane and catch light from above.
  *   3. Buttons with real physical thickness — a coloured edge under the face
  *      that compresses when pressed.
  *   4. Two-part shadows: a tight dark contact shadow plus a wide coloured
  *      ambient bloom, which is what separates "floating" from "pasted on".
+ *
+ * Colour discipline (70/20/10): the frame is deep cosmic navy. Electric violet
+ * is the one brand accent that owns identity, selection and the primary
+ * action. Neon cyan is the secondary energy colour — collectibles, telemetry,
+ * completed progress. Gold appears nowhere except coins, claimable rewards and
+ * the legendary tier. Nothing else on this screen is allowed to be gold.
  *
  * Performance rules, because this runs on 1GB Android:
  *   - Animate `transform` and `opacity` only. Both composite on the GPU.
@@ -24,25 +30,32 @@
 
 :root {
   /* --- Ground ------------------------------------------------------------ */
-  --navy: #070f18;
-  --navy-deep: #04080e;
-  --navy-raised: #0e1c2a;
-  --navy-panel: #12233440;
+  --navy: #050816;
+  --navy-deep: #030410;
+  --navy-raised: #10182b;
+  --navy-panel: #18243a40;
 
-  /* --- Brand ------------------------------------------------------------- */
-  --teal: #0f766e;
-  --teal-bright: #2dd4bf;
-  --teal-glow: #5eead4;
-  --amber: #f59e0b;
-  --amber-bright: #fbbf24;
-  --amber-glow: #fde68a;
-
-  /* --- Arcade accents. Scarce by design: one hue owns each surface. ------- */
-  --violet: #8b5cf6;
+  /* --- Brand --------------------------------------------------------------
+     Electric Violet is the identity colour: selection, the primary action,
+     the brandmark. Neon Cyan is the secondary energy colour: telemetry,
+     collectibles, completed states. They meet in one shared gradient for the
+     handful of elements that need to read as "the" call to action. */
+  --violet: #7c3aed;
   --violet-bright: #a78bfa;
-  --magenta: #ec4899;
+  --violet-deep: #4c1d95;
+  --violet-glow: rgba(124, 58, 237, 0.45);
+
   --cyan: #22d3ee;
-  --lime: #a3e635;
+  --cyan-bright: #67e8f9;
+  --cyan-deep: #0e7490;
+  --cyan-glow: rgba(34, 211, 238, 0.4);
+
+  /* Gold is the economy colour and *only* the economy colour: coins, claimable
+     rewards, the legendary rarity tier. It does not appear anywhere else. */
+  --gold: #fbbf24;
+  --gold-bright: #fde68a;
+  --gold-deep: #92400e;
+  --gold-glow: rgba(251, 191, 36, 0.45);
 
   --white: #f8fafc;
   --grey: #94a3b8;
@@ -50,35 +63,44 @@
   --danger: #f43f5e;
   --success: #34d399;
 
-  /* --- Rarity ------------------------------------------------------------ */
-  --rare: #38bdf8;
-  --epic: #c084fc;
-  --legendary: #fbbf24;
+  /* --- Rarity / progress tiers --------------------------------------------
+     Shared vocabulary across cosmetics, missions and the rank ladder. */
+  --standard: var(--grey);
+  --rare: var(--cyan);
+  --epic: var(--violet-bright);
+  --legendary: var(--gold);
 
-  /* --- Glass surfaces ---------------------------------------------------- */
-  /* A card is a vertical gradient (light at the top, as if lit from above)
-     over a translucent navy. No blur — the gradient does the work. */
+  /* --- Glass surfaces ------------------------------------------------------
+     A card is a vertical gradient (light at the top, as if lit from above)
+     over a translucent navy, with a whisper of brand colour in the sheen. No
+     blur — the gradient does the work. */
   --glass:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 42%, rgba(255, 255, 255, 0) 100%),
-    linear-gradient(180deg, rgba(23, 44, 62, 0.92) 0%, rgba(13, 26, 38, 0.94) 100%);
+    linear-gradient(180deg, rgba(167, 139, 250, 0.07) 0%, rgba(255, 255, 255, 0.02) 42%, rgba(255, 255, 255, 0) 100%),
+    linear-gradient(180deg, rgba(24, 36, 58, 0.92) 0%, rgba(12, 18, 32, 0.94) 100%);
   --glass-raised:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 40%, rgba(255, 255, 255, 0) 100%),
-    linear-gradient(180deg, rgba(30, 56, 76, 0.95) 0%, rgba(16, 32, 46, 0.96) 100%);
+    linear-gradient(180deg, rgba(167, 139, 250, 0.11) 0%, rgba(255, 255, 255, 0.03) 40%, rgba(255, 255, 255, 0) 100%),
+    linear-gradient(180deg, rgba(31, 45, 71, 0.95) 0%, rgba(15, 22, 38, 0.96) 100%);
+
+  /* The one gradient every "this is the important one" element shares. */
+  --grad-brand: linear-gradient(135deg, var(--violet) 0%, #4f6ee8 55%, var(--cyan) 100%);
+  --grad-brand-soft: linear-gradient(135deg, var(--violet-bright) 0%, var(--cyan-bright) 100%);
+  --grad-gold: linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 45%, #d97706 100%);
 
   /* Bevel: a bright top inner edge and a dark bottom one. This single pair of
      inset shadows is what makes a rectangle read as a moulded object. */
   --bevel:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 
   /* Contact shadow + ambient bloom. */
-  --lift-1: 0 2px 6px rgba(0, 0, 0, 0.4), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
-  --lift-2: 0 4px 10px rgba(0, 0, 0, 0.45), 0 18px 42px -12px rgba(0, 0, 0, 0.6);
-  --lift-3: 0 8px 18px rgba(0, 0, 0, 0.5), 0 30px 70px -18px rgba(0, 0, 0, 0.7);
+  --lift-1: 0 2px 6px rgba(0, 0, 0, 0.45), 0 8px 24px -8px rgba(0, 0, 0, 0.55);
+  --lift-2: 0 4px 10px rgba(0, 0, 0, 0.5), 0 18px 42px -12px rgba(0, 0, 0, 0.65);
+  --lift-3: 0 8px 18px rgba(0, 0, 0, 0.55), 0 30px 70px -18px rgba(0, 0, 0, 0.75);
 
-  --border: rgba(148, 163, 184, 0.16);
-  --border-hi: rgba(94, 234, 212, 0.42);
+  --border: rgba(148, 163, 184, 0.14);
+  --border-hi: rgba(124, 58, 237, 0.5);
+  --border-cyan: rgba(34, 211, 238, 0.5);
 
   /* --- Type -------------------------------------------------------------- */
   --fs-xs: 0.6875rem;
@@ -98,8 +120,8 @@
 
   --radius-sm: 0.625rem;
   --radius: 1rem;
-  --radius-lg: 1.375rem;
-  --radius-xl: 1.75rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
   --radius-pill: 999px;
 
   --safe-top: env(safe-area-inset-top, 0px);
@@ -128,7 +150,7 @@ body,
 body {
   background: var(--navy-deep);
   color: var(--white);
-  font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif;
   font-size: var(--fs-md);
   line-height: 1.45;
   overflow: hidden;
@@ -180,10 +202,10 @@ input {
   position: absolute;
   inset: -10%;
   background:
-    radial-gradient(70% 50% at 50% 8%, rgba(45, 212, 191, 0.16) 0%, transparent 62%),
-    radial-gradient(60% 45% at 12% 78%, rgba(139, 92, 246, 0.16) 0%, transparent 60%),
-    radial-gradient(55% 40% at 88% 62%, rgba(236, 72, 153, 0.12) 0%, transparent 58%),
-    linear-gradient(180deg, #0a1624 0%, #060d16 55%, #04080e 100%);
+    radial-gradient(70% 50% at 50% 6%, rgba(124, 58, 237, 0.2) 0%, transparent 62%),
+    radial-gradient(58% 45% at 12% 80%, rgba(34, 211, 238, 0.12) 0%, transparent 60%),
+    radial-gradient(52% 42% at 88% 64%, rgba(124, 58, 237, 0.12) 0%, transparent 58%),
+    linear-gradient(180deg, #0a0e22 0%, #060a18 55%, #050816 100%);
   will-change: transform;
 }
 
@@ -196,8 +218,8 @@ input {
   height: 55%;
   top: 6%;
   background:
-    radial-gradient(45% 60% at 30% 50%, rgba(45, 212, 191, 0.22) 0%, transparent 70%),
-    radial-gradient(40% 55% at 72% 45%, rgba(167, 139, 250, 0.2) 0%, transparent 70%);
+    radial-gradient(45% 60% at 30% 50%, rgba(34, 211, 238, 0.2) 0%, transparent 70%),
+    radial-gradient(40% 55% at 72% 45%, rgba(124, 58, 237, 0.24) 0%, transparent 70%);
   animation: aurora-drift 26s ease-in-out infinite alternate;
   will-change: transform;
 }
@@ -247,8 +269,8 @@ input {
   right: -10%;
   bottom: 22%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.55), transparent);
-  box-shadow: 0 0 40px 12px rgba(45, 212, 191, 0.16);
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.6), transparent);
+  box-shadow: 0 0 40px 12px rgba(124, 58, 237, 0.2);
   will-change: transform;
 }
 
@@ -260,8 +282,8 @@ input {
   bottom: -30%;
   height: 60%;
   background-image:
-    linear-gradient(rgba(94, 234, 212, 0.14) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(94, 234, 212, 0.1) 1px, transparent 1px);
+    linear-gradient(rgba(124, 58, 237, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 232, 249, 0.12) 1px, transparent 1px);
   background-size: 64px 64px;
   transform: perspective(320px) rotateX(62deg);
   transform-origin: 50% 0%;
@@ -364,7 +386,7 @@ input {
   height: 2.6rem;
   border-radius: var(--radius-pill);
   background: var(--glass-raised);
-  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.45), var(--lift-1);
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.5), var(--lift-1);
   font-size: 1.05rem;
   flex: none;
   transition: transform 0.16s var(--ease-spring), box-shadow 0.16s;
@@ -373,7 +395,7 @@ input {
 
 .iconbtn:active {
   transform: translateY(3px);
-  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.45), var(--lift-1);
+  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.5), var(--lift-1);
 }
 
 /* ============================================================== brandmark */
@@ -382,11 +404,11 @@ input {
   font-weight: 900;
   letter-spacing: 0.28em;
   text-indent: 0.28em;
-  background: linear-gradient(180deg, #ffffff 0%, #a5f3fc 42%, var(--teal-bright) 72%, var(--teal) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #d6d0ff 38%, var(--violet-bright) 70%, var(--violet) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 3px 14px rgba(45, 212, 191, 0.45));
+  filter: drop-shadow(0 3px 14px rgba(124, 58, 237, 0.45));
 }
 
 /* ================================================================== cards */
@@ -409,7 +431,7 @@ input {
   inset: 1px 1px auto;
   height: 46%;
   border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0) 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
   pointer-events: none;
 }
 
@@ -419,30 +441,31 @@ input {
 }
 
 /* An accent card gets a coloured ambient bloom under it, which is what makes
-   it read as emitting light rather than merely being brighter. */
+   it read as emitting light rather than merely being brighter. Violet is the
+   default because it is the identity colour — the "this matters" card. */
 .panel--accent {
   background: var(--glass-raised);
   box-shadow:
     var(--bevel),
     inset 0 0 0 1px var(--border-hi),
-    0 4px 12px rgba(0, 0, 0, 0.45),
-    0 20px 48px -14px rgba(45, 212, 191, 0.4);
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    0 20px 48px -14px rgba(124, 58, 237, 0.4);
 }
 
 .panel--violet {
   box-shadow:
     var(--bevel),
-    inset 0 0 0 1px rgba(167, 139, 250, 0.4),
-    0 4px 12px rgba(0, 0, 0, 0.45),
-    0 20px 48px -14px rgba(139, 92, 246, 0.42);
+    inset 0 0 0 1px rgba(167, 139, 250, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    0 20px 48px -14px rgba(124, 58, 237, 0.45);
 }
 
 .panel--amber {
   box-shadow:
     var(--bevel),
-    inset 0 0 0 1px rgba(251, 191, 36, 0.38),
-    0 4px 12px rgba(0, 0, 0, 0.45),
-    0 20px 48px -14px rgba(245, 158, 11, 0.4);
+    inset 0 0 0 1px rgba(251, 191, 36, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    0 20px 48px -14px rgba(217, 119, 6, 0.4);
 }
 
 /* Cards drift, very slightly and out of phase, so a still screen still
@@ -482,10 +505,10 @@ input {
 .panel__title {
   font-size: var(--fs-sm);
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--teal-glow);
-  text-shadow: 0 0 14px rgba(94, 234, 212, 0.4);
+  color: var(--cyan-bright);
+  text-shadow: 0 0 14px rgba(34, 211, 238, 0.35);
 }
 
 /* ================================================================ layout */
@@ -570,7 +593,7 @@ input {
   overflow: hidden;
   background: var(--glass-raised);
   color: var(--white);
-  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.5), var(--lift-1);
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.55), var(--lift-1);
   transition:
     transform 0.14s var(--ease-snap),
     box-shadow 0.14s var(--ease-snap),
@@ -586,17 +609,17 @@ input {
   inset: 1px 1px auto;
   height: 48%;
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 50% 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0) 100%);
   pointer-events: none;
 }
 
 .btn:active:not(:disabled) {
   transform: translateY(4px);
-  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
 .btn:disabled {
-  /* Not merely a faded version of the live button: an amber call-to-action at
+  /* Not merely a faded version of the live button: a gold call-to-action at
      40% opacity reads as a muddy olive, which looks broken rather than
      unavailable. Disabled controls drop back to inert glass. */
   cursor: not-allowed;
@@ -610,59 +633,60 @@ input {
   opacity: 0;
 }
 
+/* The primary action, everywhere in the app: Electric Violet into Neon Cyan. */
 .btn--primary {
-  background: linear-gradient(180deg, #5eead4 0%, var(--teal-bright) 38%, #0d9488 100%);
-  color: #04211f;
+  background: var(--grad-brand);
+  color: #04070f;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.2),
-    0 5px 0 #0b5f59,
-    0 12px 26px -6px rgba(45, 212, 191, 0.55);
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22),
+    0 5px 0 var(--violet-deep),
+    0 12px 28px -6px rgba(124, 58, 237, 0.55);
 }
 
 .btn--primary:active:not(:disabled) {
   transform: translateY(5px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 0 0 #0b5f59,
-    0 4px 12px -4px rgba(45, 212, 191, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 0 var(--violet-deep),
+    0 4px 12px -4px rgba(124, 58, 237, 0.5);
 }
 
+/* Gold, reserved for economy moments: claim a reward, watch an ad for coins. */
 .btn--amber {
-  background: linear-gradient(180deg, #fde68a 0%, var(--amber-bright) 38%, #d97706 100%);
+  background: var(--grad-gold);
   color: #2a1a03;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
     inset 0 -2px 0 rgba(0, 0, 0, 0.18),
-    0 5px 0 #a95d06,
+    0 5px 0 var(--gold-deep),
     0 12px 26px -6px rgba(245, 158, 11, 0.55);
 }
 
 .btn--amber:active:not(:disabled) {
   transform: translateY(5px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 0 0 #a95d06,
-    0 4px 12px -4px rgba(245, 158, 11, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 0 0 var(--gold-deep), 0 4px 12px -4px rgba(245, 158, 11, 0.5);
 }
 
+/* A solid violet variant for secondary brand emphasis where the full
+   violet→cyan gradient would compete with the primary CTA on the same screen. */
 .btn--violet {
-  background: linear-gradient(180deg, #ddd6fe 0%, var(--violet-bright) 38%, #7c3aed 100%);
+  background: linear-gradient(180deg, #ddd6fe 0%, var(--violet-bright) 38%, var(--violet) 100%);
   color: #1e1035;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 5px 0 #5b21b6,
+    0 5px 0 var(--violet-deep),
     0 12px 26px -6px rgba(139, 92, 246, 0.55);
 }
 
 .btn--violet:active:not(:disabled) {
   transform: translateY(5px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 #5b21b6, 0 4px 12px -4px rgba(139, 92, 246, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 var(--violet-deep), 0 4px 12px -4px rgba(139, 92, 246, 0.5);
 }
 
 .btn--ghost {
   background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 0 0 1px var(--border), 0 3px 0 rgba(0, 0, 0, 0.35), var(--lift-1);
+  box-shadow: inset 0 0 0 1px var(--border), 0 3px 0 rgba(0, 0, 0, 0.4), var(--lift-1);
 }
 
 .btn--ghost::before {
@@ -701,19 +725,20 @@ input {
   padding: 1.5rem;
   border-radius: var(--radius-xl);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 46%),
-    linear-gradient(155deg, #5eead4 0%, #2dd4bf 32%, #14b8a6 62%, #0d9488 100%);
-  color: #032c28;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(155deg, #a78bfa 0%, #7c3aed 34%, #4f6ee8 66%, #22d3ee 100%);
+  color: #04070f;
   font-size: 1.5rem;
   font-weight: 900;
   letter-spacing: 0.2em;
   text-indent: 0.2em;
   overflow: hidden;
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.7),
-    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
-    0 8px 0 #0b5f59,
-    0 20px 44px -10px rgba(45, 212, 191, 0.6);
+    inset 0 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.25),
+    0 8px 0 var(--violet-deep),
+    0 20px 48px -10px rgba(124, 58, 237, 0.6),
+    0 8px 36px -8px rgba(34, 211, 238, 0.35);
   transition: transform 0.16s var(--ease-snap), box-shadow 0.16s var(--ease-snap);
   will-change: transform;
   animation: play-breathe 3.6s ease-in-out infinite;
@@ -721,7 +746,7 @@ input {
 
 .playbtn:active {
   transform: translateY(7px) scale(0.995);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.7), 0 1px 0 #0b5f59, 0 6px 18px -6px rgba(45, 212, 191, 0.5);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.65), 0 1px 0 var(--violet-deep), 0 6px 18px -6px rgba(124, 58, 237, 0.5);
   animation: none;
 }
 
@@ -772,25 +797,27 @@ input {
   font-size: var(--fs-sm);
   font-weight: 800;
   white-space: nowrap;
-  box-shadow: var(--bevel), 0 2px 0 rgba(0, 0, 0, 0.4), var(--lift-1);
+  box-shadow: var(--bevel), 0 2px 0 rgba(0, 0, 0, 0.45), var(--lift-1);
 }
 
+/* Coins are the one balance in the game, and gold is the one colour that means
+   "economy" — nothing else in the interface is allowed to borrow it. */
 .chip--coin {
   color: #2a1a03;
-  background: linear-gradient(180deg, #fde68a 0%, var(--amber-bright) 45%, #d97706 100%);
+  background: var(--grad-gold);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 3px 0 #a95d06,
+    0 3px 0 var(--gold-deep),
     0 10px 22px -6px rgba(245, 158, 11, 0.5);
 }
 
 .chip--level {
-  color: #04211f;
-  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 45%, #0d9488 100%);
+  color: #04070f;
+  background: linear-gradient(180deg, #c4b5fd 0%, var(--violet-bright) 45%, var(--violet) 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 3px 0 #0b5f59,
-    0 10px 22px -6px rgba(45, 212, 191, 0.45);
+    0 3px 0 var(--violet-deep),
+    0 10px 22px -6px rgba(124, 58, 237, 0.45);
 }
 
 .chip--pop {
@@ -824,8 +851,10 @@ input {
   color: white;
 }
 
+/* A reward is ready to be claimed — the one moment gold is used as an alert
+   colour, because "there is treasure here" is exactly what gold should mean. */
 .badge--ready {
-  background: linear-gradient(180deg, #fde68a, #d97706);
+  background: var(--grad-gold);
   color: #2a1a03;
   animation: badge-pulse 1.6s ease-in-out infinite;
 }
@@ -852,9 +881,9 @@ input {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: var(--amber);
+  background: var(--gold);
   flex: none;
-  box-shadow: 0 0 10px var(--amber);
+  box-shadow: 0 0 10px var(--gold);
 }
 
 /* ================================================================= meters */
@@ -868,12 +897,14 @@ input {
   overflow: hidden;
 }
 
+/* Default progress: cyan. This is the "normal, still working on it" state for
+   every meter in the app — XP, missions, the daily challenge before reward. */
 .meter__fill {
   position: relative;
   height: 100%;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 45%, var(--teal) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 0 14px rgba(45, 212, 191, 0.6);
+  background: linear-gradient(180deg, #a5f3fc 0%, var(--cyan) 45%, var(--cyan-deep) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 14px rgba(34, 211, 238, 0.55);
   transition: width 0.7s var(--ease-out);
 }
 
@@ -897,9 +928,17 @@ input {
   }
 }
 
+/* Economy progress — the daily challenge pays coins, so its bar earns gold. */
 .meter__fill--amber {
-  background: linear-gradient(180deg, #fde68a 0%, var(--amber-bright) 45%, var(--amber) 100%);
+  background: var(--grad-gold);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 14px rgba(245, 158, 11, 0.6);
+}
+
+/* A finished, claimable objective: cyan turned up, with the glow that a solved
+   objective deserves. Gold stays reserved for the coin economy alone. */
+.meter__fill--complete {
+  background: linear-gradient(180deg, #ecfeff 0%, var(--cyan-bright) 45%, var(--cyan) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 20px rgba(103, 232, 249, 0.75);
 }
 
 .meter--thin {
@@ -920,7 +959,7 @@ input {
   padding: 0.4rem;
   border-radius: var(--radius-xl);
   background: var(--glass-raised);
-  box-shadow: var(--bevel), 0 6px 0 rgba(0, 0, 0, 0.45), var(--lift-3);
+  box-shadow: var(--bevel), 0 6px 0 rgba(0, 0, 0, 0.5), var(--lift-3);
 }
 
 .nav__item {
@@ -939,10 +978,12 @@ input {
   will-change: transform;
 }
 
+/* Selected: a violet/cyan glass pill with a restrained glow — never a flat
+   fill, so it still reads as glass rather than a sticker. */
 .nav__item--active {
-  color: #04211f;
-  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 50%, #0d9488 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 3px 0 #0b5f59, 0 8px 20px -6px rgba(45, 212, 191, 0.55);
+  color: #ffffff;
+  background: var(--grad-brand);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 3px 0 var(--violet-deep), 0 8px 20px -6px rgba(124, 58, 237, 0.55);
   transform: translateY(-3px);
 }
 
@@ -962,8 +1003,8 @@ input {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: linear-gradient(180deg, #fde68a, #d97706);
-  box-shadow: 0 0 8px var(--amber);
+  background: var(--grad-gold);
+  box-shadow: 0 0 8px var(--gold);
   animation: badge-pulse 1.6s ease-in-out infinite;
 }
 
@@ -990,9 +1031,9 @@ input {
 }
 
 .tabs__tab--active {
-  color: #04211f;
-  background: linear-gradient(180deg, #99f6e4 0%, var(--teal-bright) 50%, #0d9488 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 3px 0 #0b5f59, 0 6px 16px -6px rgba(45, 212, 191, 0.5);
+  color: #ffffff;
+  background: var(--grad-brand);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 3px 0 var(--violet-deep), 0 6px 16px -6px rgba(124, 58, 237, 0.5);
 }
 
 .tabs__tab:active {
@@ -1037,21 +1078,21 @@ input {
 }
 
 .switch--on {
-  background: linear-gradient(180deg, #0d9488, #115e59);
+  background: linear-gradient(180deg, var(--violet) 0%, var(--violet-deep) 100%);
   box-shadow:
     inset 0 2px 6px rgba(0, 0, 0, 0.45),
-    inset 0 0 0 1px rgba(94, 234, 212, 0.4),
-    0 0 18px -4px rgba(45, 212, 191, 0.65);
+    inset 0 0 0 1px rgba(167, 139, 250, 0.45),
+    0 0 18px -4px rgba(124, 58, 237, 0.65);
 }
 
 .switch--on .switch__knob {
   transform: translateX(1.35rem);
-  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 60%, #2dd4bf 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 #0b5f59, 0 6px 14px -3px rgba(45, 212, 191, 0.8);
+  background: linear-gradient(180deg, #ffffff 0%, #d6d0ff 60%, var(--violet-bright) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 var(--violet-deep), 0 6px 14px -3px rgba(124, 58, 237, 0.8);
 }
 
 .switch input:focus-visible + .switch__knob {
-  outline: 2px solid var(--teal-glow);
+  outline: 2px solid var(--cyan-bright);
   outline-offset: 2px;
 }
 
@@ -1070,16 +1111,14 @@ input {
 .slider::-webkit-slider-runnable-track {
   height: 0.55rem;
   border-radius: var(--radius-pill);
-  background:
-    linear-gradient(90deg, #5eead4 0%, var(--teal-bright) var(--fill), rgba(255, 255, 255, 0.07) var(--fill));
+  background: linear-gradient(90deg, var(--violet-bright) 0%, var(--cyan) var(--fill), rgba(255, 255, 255, 0.07) var(--fill));
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.65), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .slider::-moz-range-track {
   height: 0.55rem;
   border-radius: var(--radius-pill);
-  background:
-    linear-gradient(90deg, #5eead4 0%, var(--teal-bright) var(--fill), rgba(255, 255, 255, 0.07) var(--fill));
+  background: linear-gradient(90deg, var(--violet-bright) 0%, var(--cyan) var(--fill), rgba(255, 255, 255, 0.07) var(--fill));
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.65);
 }
 
@@ -1090,8 +1129,8 @@ input {
   height: 1.35rem;
   margin-top: -0.4rem;
   border-radius: 50%;
-  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 55%, #2dd4bf 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 #0b5f59, 0 6px 14px -4px rgba(45, 212, 191, 0.8);
+  background: linear-gradient(180deg, #ffffff 0%, #c4f4fc 55%, var(--cyan) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 var(--cyan-deep), 0 6px 14px -4px rgba(34, 211, 238, 0.8);
 }
 
 .slider::-moz-range-thumb {
@@ -1099,8 +1138,8 @@ input {
   height: 1.35rem;
   border: none;
   border-radius: 50%;
-  background: linear-gradient(180deg, #ffffff 0%, #99f6e4 55%, #2dd4bf 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 #0b5f59, 0 6px 14px -4px rgba(45, 212, 191, 0.8);
+  background: linear-gradient(180deg, #ffffff 0%, #c4f4fc 55%, var(--cyan) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 0 var(--cyan-deep), 0 6px 14px -4px rgba(34, 211, 238, 0.8);
 }
 
 .slider:disabled {
@@ -1133,11 +1172,11 @@ input {
   font-weight: 900;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, #ffffff 0%, #d1fae5 55%, #5eead4 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #e0e7ff 45%, var(--cyan-bright) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 16px rgba(94, 234, 212, 0.4));
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 16px rgba(124, 58, 237, 0.4));
 }
 
 .hud__sub {
@@ -1176,11 +1215,11 @@ input {
   font-weight: 900;
   letter-spacing: 0.26em;
   text-indent: 0.26em;
-  background: linear-gradient(180deg, #ffffff, #5eead4);
+  background: linear-gradient(180deg, #ffffff, var(--cyan-bright));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 22px rgba(45, 212, 191, 0.8));
+  filter: drop-shadow(0 0 22px rgba(124, 58, 237, 0.8));
   animation: stage-flash 1.6s var(--ease-out) forwards;
 }
 
@@ -1210,7 +1249,7 @@ input {
   font-size: 5.5rem;
   font-weight: 900;
   color: var(--white);
-  filter: drop-shadow(0 0 40px rgba(45, 212, 191, 0.9));
+  filter: drop-shadow(0 0 40px rgba(124, 58, 237, 0.9));
 }
 
 .hud__countdown span {
@@ -1242,11 +1281,11 @@ input {
   font-weight: 900;
   font-size: var(--fs-lg);
   letter-spacing: 0.1em;
-  background: linear-gradient(180deg, #fff7cd, var(--amber));
+  background: linear-gradient(180deg, #ecfeff, var(--cyan-bright));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 18px rgba(245, 158, 11, 0.8));
+  filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.8));
 }
 
 .hud__fps {
@@ -1286,7 +1325,7 @@ input {
 .overlay {
   position: absolute;
   inset: 0;
-  background: radial-gradient(80% 60% at 50% 40%, rgba(4, 10, 18, 0.72), rgba(2, 5, 10, 0.92));
+  background: radial-gradient(80% 60% at 50% 40%, rgba(5, 8, 22, 0.74), rgba(2, 3, 10, 0.93));
   /* The only backdrop-filter in the system. One full-screen blur is affordable;
      one per card is not. */
   backdrop-filter: blur(14px) saturate(1.2);
@@ -1319,9 +1358,9 @@ input {
   padding: var(--sp-5);
   box-shadow:
     var(--bevel),
-    0 8px 0 rgba(0, 0, 0, 0.4),
+    0 8px 0 rgba(0, 0, 0, 0.45),
     0 40px 90px -20px rgba(0, 0, 0, 0.85),
-    0 0 70px -20px rgba(45, 212, 191, 0.35);
+    0 0 70px -20px rgba(124, 58, 237, 0.35);
   max-height: 86vh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1336,7 +1375,7 @@ input {
   inset: 1px 1px auto;
   height: 42%;
   border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0));
   pointer-events: none;
 }
 
@@ -1355,7 +1394,7 @@ input {
   font-size: var(--fs-xl);
   font-weight: 900;
   margin: 0 0 var(--sp-1);
-  background: linear-gradient(180deg, #ffffff, #a5f3fc);
+  background: linear-gradient(180deg, #ffffff, var(--cyan-bright));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -1375,9 +1414,9 @@ input {
   max-height: 92vh;
   box-shadow:
     var(--bevel),
-    0 8px 0 rgba(0, 0, 0, 0.4),
+    0 8px 0 rgba(0, 0, 0, 0.45),
     0 40px 90px -20px rgba(0, 0, 0, 0.85),
-    0 0 90px -18px rgba(45, 212, 191, 0.42);
+    0 0 90px -18px rgba(124, 58, 237, 0.4);
 }
 
 /* ================================================================= store */
@@ -1392,7 +1431,7 @@ input {
   gap: var(--sp-2);
   text-align: left;
   width: 100%;
-  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.42), var(--lift-2);
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.45), var(--lift-2);
   transition: transform 0.18s var(--ease-spring), box-shadow 0.18s;
   will-change: transform;
   contain: layout paint style;
@@ -1410,15 +1449,15 @@ input {
 
 .cosmetic:active {
   transform: translateY(4px) scale(0.985);
-  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.42), var(--lift-1);
+  box-shadow: var(--bevel), 0 0 0 rgba(0, 0, 0, 0.45), var(--lift-1);
 }
 
 .cosmetic--equipped {
   box-shadow:
     var(--bevel),
-    inset 0 0 0 1.5px var(--teal-bright),
-    0 4px 0 #0b5f59,
-    0 18px 40px -12px rgba(45, 212, 191, 0.5);
+    inset 0 0 0 1.5px var(--cyan),
+    0 4px 0 var(--cyan-deep),
+    0 18px 40px -12px rgba(34, 211, 238, 0.5);
 }
 
 .cosmetic--locked {
@@ -1504,16 +1543,19 @@ input {
   z-index: 1;
 }
 
+/* Rarity is the store's own progress ladder, and it shares the same three
+   accent colours as everything else: cyan for the first rung up from
+   standard, violet for the one above it, gold reserved for the top. */
 .rarity--rare {
-  color: var(--rare);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.5), 0 0 12px rgba(56, 189, 248, 0.35);
+  color: var(--cyan);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.5), 0 0 12px rgba(34, 211, 238, 0.35);
 }
 .rarity--epic {
-  color: var(--epic);
-  box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.5), 0 0 12px rgba(192, 132, 252, 0.35);
+  color: var(--violet-bright);
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.5), 0 0 12px rgba(167, 139, 250, 0.35);
 }
 .rarity--legendary {
-  color: var(--legendary);
+  color: var(--gold);
   box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.55), 0 0 14px rgba(251, 191, 36, 0.45);
 }
 .rarity--standard {
@@ -1530,7 +1572,7 @@ input {
   padding: var(--sp-3);
   border-radius: var(--radius);
   background: var(--glass);
-  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.35), var(--lift-1);
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.4), var(--lift-1);
   transition: transform 0.16s var(--ease-spring);
   contain: layout paint style;
 }
@@ -1544,8 +1586,8 @@ input {
   box-shadow:
     var(--bevel),
     inset 0 0 0 1.5px var(--border-hi),
-    0 3px 0 #0b5f59,
-    0 14px 32px -10px rgba(45, 212, 191, 0.42);
+    0 3px 0 var(--violet-deep),
+    0 14px 32px -10px rgba(124, 58, 237, 0.42);
 }
 
 .listrow__rank {
@@ -1557,7 +1599,7 @@ input {
 }
 
 .listrow__rank--1 {
-  color: var(--legendary);
+  color: var(--gold);
   filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.7));
 }
 .listrow__rank--2 {
@@ -1594,11 +1636,11 @@ input {
   font-weight: 900;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, #ffffff 0%, #d1fae5 50%, #5eead4 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #e0e7ff 50%, var(--cyan-bright) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 26px rgba(94, 234, 212, 0.5));
+  filter: drop-shadow(0 0 26px rgba(124, 58, 237, 0.45));
 }
 
 .result__label {
@@ -1612,7 +1654,7 @@ input {
   display: inline-block;
   padding: 0.25rem 0.7rem;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, #fde68a, #d97706);
+  background: var(--grad-gold);
   color: #2a1a03;
   font-weight: 900;
   letter-spacing: 0.1em;
@@ -1721,7 +1763,7 @@ input {
     from 0deg,
     rgba(251, 191, 36, 0.26) 0deg 4deg,
     transparent 4deg 20deg,
-    rgba(94, 234, 212, 0.15) 20deg 23deg,
+    rgba(124, 58, 237, 0.16) 20deg 23deg,
     transparent 23deg 45deg
   );
   /* Fading the rays out well before the edge keeps them reading as light
@@ -1783,6 +1825,86 @@ input {
   }
 }
 
+/* ============================================================ rank badges */
+
+/* The profile hero emblem: seven tiers, each with its own material and glow,
+   climbing from inert slate to a prismatic top rank that no earlier tier
+   attempts to imitate. */
+.rank-badge {
+  position: relative;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -3px 6px rgba(0, 0, 0, 0.35), 0 6px 16px -6px rgba(0, 0, 0, 0.7);
+}
+
+.rank-badge--sm {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.rank-badge__glyph {
+  font-size: 1.4rem;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+.rank-badge--sm .rank-badge__glyph {
+  font-size: 1rem;
+}
+
+.rank-badge--slate {
+  background: linear-gradient(160deg, #475569 0%, #1e293b 100%);
+  color: var(--grey);
+}
+
+.rank-badge--cyan {
+  background: linear-gradient(160deg, #a5f3fc 0%, var(--cyan) 55%, var(--cyan-deep) 100%);
+  color: #04252c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 18px -4px rgba(34, 211, 238, 0.7);
+}
+
+.rank-badge--cyanviolet {
+  background: linear-gradient(160deg, #a5f3fc 0%, var(--cyan) 32%, var(--violet) 78%, var(--violet-deep) 100%);
+  color: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 18px -4px rgba(124, 58, 237, 0.7);
+}
+
+.rank-badge--violet {
+  background: linear-gradient(160deg, #ddd6fe 0%, var(--violet) 60%, var(--violet-deep) 100%);
+  color: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 20px -3px rgba(124, 58, 237, 0.8);
+}
+
+.rank-badge--violetbright {
+  background: linear-gradient(160deg, #f5f3ff 0%, var(--violet-bright) 45%, var(--violet) 100%);
+  color: #1e1035;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 24px -2px rgba(167, 139, 250, 0.85);
+}
+
+.rank-badge--gold {
+  background: var(--grad-gold);
+  color: #2a1a03;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 0 26px -2px rgba(251, 191, 36, 0.9);
+}
+
+/* Galaxy: the aspirational top rank. A slow conic sweep through every accent
+   the game owns, so the highest tier is visibly unlike anything below it. */
+.rank-badge--prism {
+  background: conic-gradient(from 0deg, var(--violet), var(--cyan), var(--gold), var(--violet-bright), var(--violet));
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 30px -2px rgba(124, 58, 237, 0.9);
+  animation: rank-prism-spin 8s linear infinite;
+}
+
+@keyframes rank-prism-spin {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
 /* ================================================================ toasts */
 
 .toasts {
@@ -1806,7 +1928,7 @@ input {
   padding: 0.7rem 1.1rem;
   border-radius: var(--radius-pill);
   background: var(--glass-raised);
-  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.45), var(--lift-2);
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.5), var(--lift-2);
   font-size: var(--fs-sm);
   font-weight: 700;
   max-width: 100%;
@@ -1815,8 +1937,8 @@ input {
 
 .toast--reward {
   color: #2a1a03;
-  background: linear-gradient(180deg, #fde68a, var(--amber));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 0 #a95d06, 0 12px 28px -8px rgba(245, 158, 11, 0.6);
+  background: var(--grad-gold);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 0 var(--gold-deep), 0 12px 28px -8px rgba(245, 158, 11, 0.6);
 }
 
 .toast--error {
@@ -1854,7 +1976,7 @@ input {
   font-size: var(--fs-2xl);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, #ffffff, #5eead4);
+  background: linear-gradient(180deg, #ffffff, var(--cyan-bright));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -1888,7 +2010,7 @@ input {
   justify-content: center;
   gap: var(--sp-5);
   z-index: 80;
-  background: radial-gradient(120% 80% at 50% 0%, rgba(15, 118, 110, 0.24) 0%, transparent 60%), var(--navy-deep);
+  background: radial-gradient(120% 80% at 50% 0%, rgba(124, 58, 237, 0.22) 0%, transparent 60%), var(--navy-deep);
   transition: opacity 0.4s ease;
 }
 

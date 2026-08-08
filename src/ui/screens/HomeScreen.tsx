@@ -124,7 +124,7 @@ export function HomeScreen() {
                       <span className={complete ? 'muted' : undefined}>{def.description}</span>
                       {complete && !progress.claimed && <span className="badge badge--ready">Claim</span>}
                     </div>
-                    <Meter value={Math.min(1, progress.progress / def.target)} thin />
+                    <Meter value={Math.min(1, progress.progress / def.target)} complete={complete} thin />
                   </div>
                 );
               })}

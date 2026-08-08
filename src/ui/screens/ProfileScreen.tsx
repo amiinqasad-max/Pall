@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore, useLevel, useCoins } from '@/state/store';
 import { useUi } from '@/state/ui';
 import { ACHIEVEMENTS, LEVEL_REWARDS, badgeForLevel, environmentsForLevel } from '@/data/progression';
-import { Button, CoinChip, IconButton, Meter, Panel, Sheet, StatGrid, Tabs } from '@/ui/components/primitives';
+import { Button, CoinChip, IconButton, Meter, Panel, RankBadge, Sheet, StatGrid, Tabs } from '@/ui/components/primitives';
 import { compact, distance as fmtDistance, num } from '@/core/format';
 import { formatDuration } from '@/core/time';
 import { audio } from '@/systems/audio';
@@ -48,22 +48,7 @@ export function ProfileScreen() {
       <div className="screen__body">
         <Panel accent>
           <div className="row" style={{ marginBottom: 'var(--sp-3)' }}>
-            <div
-              style={{
-                width: '3.25rem',
-                height: '3.25rem',
-                borderRadius: '50%',
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: '1.5rem',
-                background: 'linear-gradient(135deg, var(--teal) 0%, var(--navy-panel) 100%)',
-                border: '1px solid var(--border-hi)',
-                flex: 'none',
-              }}
-              aria-hidden="true"
-            >
-              {badge.glyph}
-            </div>
+            <RankBadge glyph={badge.glyph} tone={badge.tone} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="strong" style={{ fontSize: 'var(--fs-lg)' }}>
                 {save.player.username}

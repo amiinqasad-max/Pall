@@ -144,7 +144,7 @@ export function ResultsSheet({
           </div>
           <Meter value={barFilled ? level.progress : 0} />
           {summary.levelsGained > 0 && (
-            <p className="tiny center levelup" style={{ color: 'var(--teal-bright)', marginTop: 6 }}>
+            <p className="tiny center levelup" style={{ color: 'var(--cyan-bright)', marginTop: 6 }}>
               Level up{summary.levelsGained > 1 ? ` ×${summary.levelsGained}` : ''}
             </p>
           )}

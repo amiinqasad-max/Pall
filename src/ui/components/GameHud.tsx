@@ -55,7 +55,7 @@ export function GameHud({ visible, showFps, bestScore, onPause }: Props) {
       const kmh = Math.round(tick.speed * 3.6);
       if (kmh !== lastSpeed && speedRef.current) {
         speedRef.current.textContent = `${kmh} km/h`;
-        speedRef.current.style.color = tick.boosting ? 'var(--amber-bright)' : '';
+        speedRef.current.style.color = tick.boosting ? 'var(--cyan-bright)' : '';
         lastSpeed = kmh;
       }
       if (tick.prisms !== lastPrisms && prismRef.current) {

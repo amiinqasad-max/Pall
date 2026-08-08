@@ -65,7 +65,7 @@ export function MissionsScreen() {
                   </div>
                 </div>
 
-                <Meter value={pct} amber={complete} />
+                <Meter value={pct} complete={complete} />
                 <div className="row row--between tiny muted" style={{ marginTop: 6 }}>
                   <span className="numeric">
                     {num(Math.min(progress.progress, def.target))} / {num(def.target)}
