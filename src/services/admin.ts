@@ -32,6 +32,11 @@ export interface AdminChallengeConfig {
   defaultPrizePoolCents: number;
   defaultWinnerCount: number;
   defaultMaxFinalAttempts: number;
+  /** The per-rank prize template, exploded into challenge_prizes rows at
+   *  start_challenge() time. Kept as the raw jsonb shape the RPC expects
+   *  ({rank, amount_cents} or {rank_from, rank_to, amount_cents}) rather than
+   *  a typed model — this is edited as JSON text in the admin screen. */
+  defaultPrizeDistribution: unknown[];
 }
 
 export async function fetchChallengeConfig(): Promise<AdminChallengeConfig | null> {
@@ -50,16 +55,13 @@ export async function fetchChallengeConfig(): Promise<AdminChallengeConfig | nul
     defaultPrizePoolCents: Number(row.default_prize_pool_usd_cents),
     defaultWinnerCount: Number(row.default_winner_count),
     defaultMaxFinalAttempts: Number(row.default_max_final_attempts),
+    defaultPrizeDistribution: Array.isArray(row.default_prize_distribution) ? row.default_prize_distribution : [],
   };
 }
 
 export async function updateChallengeConfig(cfg: AdminChallengeConfig): Promise<boolean> {
   const sb = await supabase();
   if (!sb) return false;
-  // The default_prize_distribution jsonb template isn't editable from this
-  // minimal screen — it keeps whatever shape the migration seeded. A future,
-  // fuller dashboard is the right place for a real distribution editor.
-  const current = await sb.from('daily_challenge_configs').select('default_prize_distribution').eq('id', 1).maybeSingle();
   const { error } = await sb.rpc('update_challenge_config', {
     p_reference_percentile: cfg.referencePercentile,
     p_qualification_multiplier: cfg.qualificationMultiplier,
@@ -69,7 +71,7 @@ export async function updateChallengeConfig(cfg: AdminChallengeConfig): Promise<
     p_minimum_sample_size: cfg.minimumSampleSize,
     p_default_prize_pool_usd_cents: cfg.defaultPrizePoolCents,
     p_default_winner_count: cfg.defaultWinnerCount,
-    p_default_prize_distribution: current.data?.default_prize_distribution ?? [],
+    p_default_prize_distribution: cfg.defaultPrizeDistribution,
     p_default_max_final_attempts: cfg.defaultMaxFinalAttempts,
   });
   return !error;

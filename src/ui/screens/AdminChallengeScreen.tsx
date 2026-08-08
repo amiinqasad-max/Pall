@@ -44,9 +44,12 @@ export function AdminChallengeScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [monitoring, setMonitoring] = useState<ChallengeMonitoring | null>(null);
   const [config, setConfig] = useState<AdminChallengeConfig | null>(null);
+  const [prizeDistributionText, setPrizeDistributionText] = useState('');
   const [payouts, setPayouts] = useState<AdminPayoutRow[]>([]);
   const [payoutRefs, setPayoutRefs] = useState<Record<string, string>>({});
   const [newDate, setNewDate] = useState('');
+  const [startTime, setStartTime] = useState('00:00');
+  const [endTime, setEndTime] = useState('23:59');
   const [country, setCountry] = useState('');
   const [regionEnabled, setRegionEnabled] = useState(false);
 
@@ -61,7 +64,10 @@ export function AdminChallengeScreen() {
   useEffect(() => {
     if (authorized !== 'yes') return;
     void reloadChallenges();
-    void fetchChallengeConfig().then(setConfig);
+    void fetchChallengeConfig().then((cfg) => {
+      setConfig(cfg);
+      if (cfg) setPrizeDistributionText(JSON.stringify(cfg.defaultPrizeDistribution, null, 2));
+    });
   }, [authorized]);
 
   const reloadPayouts = async (challengeId: string): Promise<void> => {
@@ -122,21 +128,42 @@ export function AdminChallengeScreen() {
       <div className="screen__body">
         <div className="stack">
           <Panel title="Create challenge">
-            <div className="row" style={{ gap: 'var(--sp-2)' }}>
-              <input
-                type="date"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                style={{ flex: 1, padding: '0.5rem', borderRadius: 8 }}
-              />
+            <div className="stack stack--tight">
+              <label className="row row--between small">
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  style={{ padding: '0.5rem', borderRadius: 8 }}
+                />
+              </label>
+              <label className="row row--between small">
+                <span>Start time (UTC)</span>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  style={{ padding: '0.5rem', borderRadius: 8 }}
+                />
+              </label>
+              <label className="row row--between small">
+                <span>End time (UTC)</span>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  style={{ padding: '0.5rem', borderRadius: 8 }}
+                />
+              </label>
               <button
                 className="btn btn--sm btn--primary"
                 onClick={async () => {
                   if (!newDate) return;
-                  const start = new Date(`${newDate}T00:00:00Z`).toISOString();
-                  const end = new Date(`${newDate}T23:59:59Z`).toISOString();
+                  const start = new Date(`${newDate}T${startTime}:00Z`).toISOString();
+                  const end = new Date(`${newDate}T${endTime}:59Z`).toISOString();
                   const id = await createChallenge(newDate, start, end);
-                  toast(id ? 'Challenge created (00:00–23:59 UTC)' : 'Failed to create challenge', id ? 'info' : 'error');
+                  toast(id ? `Challenge created (${startTime}–${endTime} UTC)` : 'Failed to create challenge', id ? 'info' : 'error');
                   void reloadChallenges();
                 }}
               >
@@ -294,7 +321,7 @@ export function AdminChallengeScreen() {
                     ['Prize pool (cents)', 'defaultPrizePoolCents'],
                     ['Winner count', 'defaultWinnerCount'],
                     ['Max final attempts', 'defaultMaxFinalAttempts'],
-                  ] as [string, keyof AdminChallengeConfig][]
+                  ] as [string, Exclude<keyof AdminChallengeConfig, 'defaultPrizeDistribution'>][]
                 ).map(([label, key]) => (
                   <label key={key} className="row row--between small">
                     <span>{label}</span>
@@ -306,10 +333,30 @@ export function AdminChallengeScreen() {
                     />
                   </label>
                 ))}
+                <label className="small" style={{ display: 'block' }}>
+                  <span style={{ display: 'block', marginBottom: 4 }}>
+                    Prize distribution (jsonb — one entry per exact rank or a rank range)
+                  </span>
+                  <textarea
+                    value={prizeDistributionText}
+                    onChange={(e) => setPrizeDistributionText(e.target.value)}
+                    rows={6}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.8rem' }}
+                  />
+                </label>
                 <button
                   className="btn btn--sm btn--primary"
                   onClick={async () => {
-                    const ok = await updateChallengeConfig(config);
+                    let distribution: unknown[];
+                    try {
+                      const parsed = JSON.parse(prizeDistributionText);
+                      if (!Array.isArray(parsed)) throw new Error('not an array');
+                      distribution = parsed;
+                    } catch {
+                      toast('Prize distribution must be valid JSON array', 'error');
+                      return;
+                    }
+                    const ok = await updateChallengeConfig({ ...config, defaultPrizeDistribution: distribution });
                     toast(ok ? 'Config saved' : 'Save failed', ok ? 'info' : 'error');
                   }}
                 >

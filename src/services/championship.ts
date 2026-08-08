@@ -241,6 +241,24 @@ export async function fetchChampionshipLeaderboard(
 
   try {
     const session = await ensureSession();
+    // championship_leaderboard_page reads a periodically-refreshed cache
+    // table (challenge_leaderboards), not a live computation -- see the
+    // migration's own comment on refresh_challenge_leaderboard(), which
+    // exists specifically so "the client can force a refresh when it opens
+    // the final screen." Nothing called it before this, so the cache never
+    // populated for an active challenge (only end_challenge() ever wrote to
+    // it), and the Top-25 board looked permanently empty all day regardless
+    // of how many real final scores had been submitted. This call is
+    // already gated by the cache-freshness check above, so it fires at most
+    // once per LEADERBOARD_CACHE_TTL_MS while this screen is open -- not
+    // unbounded polling. Best-effort: if it fails, the read below still
+    // returns whatever the cache already has rather than erroring out.
+    try {
+      await sb.rpc('refresh_challenge_leaderboard', { p_challenge_id: challengeId });
+    } catch {
+      // Best-effort -- fall through to reading whatever the cache already has.
+    }
+
     const { data, error } = await sb.rpc('championship_leaderboard_page', {
       p_challenge_id: challengeId,
       p_limit: limit,
