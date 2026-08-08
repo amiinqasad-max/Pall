@@ -194,6 +194,15 @@ export interface ChampionshipLeaderboardEntry {
   isSelf?: boolean;
 }
 
+/** The signed-in player's own payout row for a challenge they placed in —
+ *  absent entirely until end_challenge() seeds it for the Top-N finishers. */
+export interface ChampionshipPayout {
+  rank: number;
+  prizeAmountCents: number;
+  verificationStatus: PayoutVerificationStatus;
+  payoutStatus: PayoutStatus;
+}
+
 export interface CoinPackage {
   id: string;
   name: string;

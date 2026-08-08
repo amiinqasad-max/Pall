@@ -31,7 +31,7 @@ function seenKey(challengeId: string): string {
 export function ChampionshipScreen() {
   const go = useUi((s) => s.go);
   const country = useStore((s) => s.save.player.country);
-  const { challenge, participant, qualifiedCount, cashPrizeEnabled, ready, init } = useChampionship();
+  const { challenge, participant, qualifiedCount, cashPrizeEnabled, ready, error, init } = useChampionship();
 
   const [now, setNow] = useState(Date.now());
   const [showRules, setShowRules] = useState(false);
@@ -82,6 +82,27 @@ export function ChampionshipScreen() {
     );
   }
 
+  if (error && !challenge) {
+    return (
+      <>
+        <header className="topbar">
+          <IconButton icon="←" label="Back" onClick={() => go('home')} />
+          <h1 className="topbar__title">🏆 Daily Championship</h1>
+        </header>
+        <div className="screen__body">
+          <Panel>
+            <p className="small muted center" style={{ margin: '0 0 var(--sp-3)' }}>
+              Couldn’t load today’s challenge.
+            </p>
+            <Button block onClick={() => void init(country)}>
+              Try Again
+            </Button>
+          </Panel>
+        </div>
+      </>
+    );
+  }
+
   if (!challenge) {
     return (
       <>
@@ -92,7 +113,7 @@ export function ChampionshipScreen() {
         <div className="screen__body">
           <Panel>
             <p className="small muted center" style={{ margin: 0 }}>
-              No Championship is running right now. Check back soon.
+              No Daily Championship is active right now. Check back soon.
             </p>
           </Panel>
         </div>

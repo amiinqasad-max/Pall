@@ -22,6 +22,7 @@ import type {
   ChampionshipChallenge,
   ChampionshipLeaderboardEntry,
   ChampionshipParticipant,
+  ChampionshipPayout,
   CoinPackage,
   RunResult,
 } from '@/types';
@@ -60,11 +61,26 @@ function mapChallenge(row: Record<string, unknown>): ChampionshipChallenge {
   };
 }
 
-/** Today's Championship, whatever state it's in — null when there isn't one
- *  (nothing scheduled yet, or the backend is unconfigured/unreachable). */
-export async function fetchTodaysChallenge(): Promise<ChampionshipChallenge | null> {
+export interface TodaysChallengeResult {
+  challenge: ChampionshipChallenge | null;
+  /** True only when the fetch itself failed (offline, network error, a
+   *  Postgres error) — false when it succeeded and simply found no row.
+   *  The UI needs this distinction: "no Championship is scheduled today" and
+   *  "couldn't reach the backend" are not the same message or the same
+   *  recovery action (a retry button only makes sense for the latter). */
+  error: boolean;
+}
+
+/** Today's Championship, whatever state it's in. `challenge` is null both
+ *  when nothing is scheduled yet and when the fetch failed outright — check
+ *  `error` to tell those apart. */
+export async function fetchTodaysChallenge(): Promise<TodaysChallengeResult> {
   const sb = await supabase();
-  if (!sb || !isOnline()) return null;
+  // No backend configured at all is a deployment fact, not a transient
+  // failure — showing a "couldn't load, try again" state that can never
+  // succeed would be actively misleading, so this reads as "no challenge".
+  if (!sb) return { challenge: null, error: false };
+  if (!isOnline()) return { challenge: null, error: true };
 
   try {
     const today = new Date().toISOString().slice(0, 10);
@@ -74,11 +90,15 @@ export async function fetchTodaysChallenge(): Promise<ChampionshipChallenge | nu
       .eq('challenge_date', today)
       .in('status', ['scheduled', 'active', 'paused', 'ended'])
       .maybeSingle();
-    if (error || !data) return null;
-    return mapChallenge(data as Record<string, unknown>);
+    if (error) {
+      analytics.track('championship_fetch_failed', { message: error.message });
+      return { challenge: null, error: true };
+    }
+    if (!data) return { challenge: null, error: false };
+    return { challenge: mapChallenge(data as Record<string, unknown>), error: false };
   } catch (err) {
     analytics.track('championship_fetch_failed', { message: String(err) });
-    return null;
+    return { challenge: null, error: true };
   }
 }
 
@@ -274,6 +294,35 @@ export async function fetchPrizeAtRank(challengeId: string, rank: number | null)
     if (error || !data) return null;
     return Number((data as { prize_amount_cents: number }).prize_amount_cents);
   } catch {
+    return null;
+  }
+}
+
+/** The signed-in player's own payout row for a challenge, or null if they
+ *  never placed in the Top-N (end_challenge only seeds a row for finishers
+ *  the frozen prize table actually covers). RLS already restricts this read
+ *  to the caller's own row, exactly like fetchMyParticipant above. */
+export async function fetchMyPayout(challengeId: string): Promise<ChampionshipPayout | null> {
+  const sb = await supabase();
+  const session = await ensureSession();
+  if (!sb || !session || !isOnline()) return null;
+
+  try {
+    const { data, error } = await sb
+      .from('challenge_payouts')
+      .select('rank, prize_amount_cents, verification_status, payout_status')
+      .eq('challenge_id', challengeId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as Record<string, unknown>;
+    return {
+      rank: Number(row.rank),
+      prizeAmountCents: Number(row.prize_amount_cents),
+      verificationStatus: row.verification_status as ChampionshipPayout['verificationStatus'],
+      payoutStatus: row.payout_status as ChampionshipPayout['payoutStatus'],
+    };
+  } catch (err) {
+    analytics.track('championship_fetch_failed', { message: String(err) });
     return null;
   }
 }

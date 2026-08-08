@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import {
   fetchChampionshipLeaderboard,
   fetchMyParticipant,
+  fetchMyPayout,
   fetchQualifiedCount,
   fetchTodaysChallenge,
   regionCashPrizeEnabled,
@@ -24,6 +25,7 @@ import type {
   ChampionshipChallenge,
   ChampionshipLeaderboardEntry,
   ChampionshipParticipant,
+  ChampionshipPayout,
   RunResult,
 } from '@/types';
 
@@ -60,10 +62,16 @@ interface ChampionshipState {
   leaderboard: ChampionshipLeaderboardEntry[];
   selfRank: number | null;
   qualifiedCount: number;
+  /** The player's own payout row, once the challenge has ended and they
+   *  placed in the Top-N — null before that, and null forever otherwise. */
+  payout: ChampionshipPayout | null;
   /** Fail-closed until a region is checked and found allow-listed. */
   cashPrizeEnabled: boolean;
   loading: boolean;
   ready: boolean;
+  /** True only when the day's challenge fetch itself failed (offline,
+   *  network error) — never true just because there's no active challenge. */
+  error: boolean;
 
   init(country: string | null): Promise<void>;
   refreshParticipant(): Promise<void>;
@@ -78,24 +86,31 @@ export const useChampionship = create<ChampionshipState>((set, get) => ({
   leaderboard: [],
   selfRank: null,
   qualifiedCount: 0,
+  payout: null,
   cashPrizeEnabled: false,
   loading: false,
   ready: false,
+  error: false,
 
   async init(country) {
-    set({ loading: true });
-    const [challenge, cashPrizeEnabled] = await Promise.all([
+    set({ loading: true, error: false });
+    const [{ challenge, error }, cashPrizeEnabled] = await Promise.all([
       fetchTodaysChallenge(),
       regionCashPrizeEnabled(country),
     ]);
-    set({ challenge, cashPrizeEnabled, loading: false, ready: true });
-    if (challenge) {
-      const [, qualifiedCount] = await Promise.all([
-        get().refreshParticipant(),
-        fetchQualifiedCount(challenge.id),
-      ]);
-      set({ qualifiedCount });
+    set({ challenge, cashPrizeEnabled, loading: false, ready: true, error });
+    if (!challenge) {
+      set({ payout: null });
+      return;
     }
+    const [, qualifiedCount] = await Promise.all([
+      get().refreshParticipant(),
+      fetchQualifiedCount(challenge.id),
+    ]);
+    set({ qualifiedCount });
+    // Only a finished challenge can have a payout row at all — end_challenge
+    // is the only thing that ever writes one (see 0002_championship.sql).
+    set({ payout: challenge.status === 'ended' ? await fetchMyPayout(challenge.id) : null });
   },
 
   async refreshParticipant() {

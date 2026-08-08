@@ -8,6 +8,7 @@ import { challengeProgressValue } from '@/state/store';
 import { formatCountdown, msUntilUtcMidnight } from '@/core/time';
 import { compact, num } from '@/core/format';
 import { Button, CoinChip, Meter, Panel } from '@/ui/components/primitives';
+import { ChampionshipHomeCard } from '@/ui/components/ChampionshipHomeCard';
 import { InstallPrompt } from '@/ui/components/InstallPrompt';
 
 export function HomeScreen() {
@@ -17,7 +18,7 @@ export function HomeScreen() {
   const coins = useCoins();
   const daily = useMissions('daily');
   const [resetIn, setResetIn] = useState(msUntilUtcMidnight());
-  const { challenge: champChallenge, participant: champParticipant, init: initChampionship } = useChampionship();
+  const initChampionship = useChampionship((s) => s.init);
 
   useEffect(() => {
     const timer = setInterval(() => setResetIn(msUntilUtcMidnight()), 1000);
@@ -80,31 +81,12 @@ export function HomeScreen() {
           </button>
 
           {/* The Championship — distinct from the mission-style "Daily
-              challenge" card below. Only rendered once a challenge exists. */}
-          {champChallenge && (
-            <Panel
-              title="🏆 Daily Championship"
-              tone="violet"
-              float
-              action={champParticipant?.qualificationStatus === 'qualified' ? (
-                <span className="badge badge--done">Qualified</span>
-              ) : undefined}
-            >
-              <p className="small muted" style={{ margin: '0 0 var(--sp-2)' }}>
-                Reach {num(champChallenge.qualificationTarget ?? 0)} points to qualify for the free Cash
-                Championship final. No purchase necessary.
-              </p>
-              <Button
-                block
-                size="sm"
-                variant={champParticipant?.qualificationStatus === 'qualified' ? 'amber' : 'default'}
-                className="btn--block"
-                onClick={() => go(champParticipant?.qualificationStatus === 'qualified' ? 'championshipFinal' : 'championship')}
-              >
-                {champParticipant?.qualificationStatus === 'qualified' ? 'View Championship' : 'View qualification'}
-              </Button>
-            </Panel>
-          )}
+              challenge" card below. Always rendered: loading, error,
+              no-active-challenge, qualification, qualified, and ended/payout
+              are all real states inside this one card, not conditions on
+              whether to show it at all (see the component's own header for
+              why that used to make the whole feature unreachable). */}
+          <ChampionshipHomeCard />
 
           {/* Daily challenge: same target, same seed, everyone, every day. */}
           <Panel
