@@ -1,0 +1,88 @@
+# Builds and deploys with the Vercel CLI on every push.
+#
+# Pushes to the default branch (`claude/tartan-arcade-game-gwjdi2` — this repo
+# has no `main`) become production deploys; every other branch gets its own
+# preview deploy. `vercel.json` already holds the build/output config, so this
+# workflow only needs to authenticate and call the CLI.
+#
+# One-time setup, in the GitHub repo's Settings -> Secrets and variables ->
+# Actions:
+#   VERCEL_TOKEN      Account Settings -> Tokens -> Create, on vercel.com
+#   VERCEL_ORG_ID     `.vercel/project.json` after `vercel link` locally, or
+#                      Vercel project -> Settings -> General -> "Team ID"
+#   VERCEL_PROJECT_ID `.vercel/project.json` after `vercel link`, or
+#                      Vercel project -> Settings -> General -> "Project ID"
+#
+# The project must exist on Vercel first (`vercel link` once from a machine
+# with the CLI, or import the repo from the Vercel dashboard) — this workflow
+# deploys to an existing project, it does not create one.
+
+name: Deploy
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Decide deploy target
+        id: target
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/claude/tartan-arcade-game-gwjdi2" ]; then
+            echo "env=production" >> "$GITHUB_OUTPUT"
+            echo "flag=--prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=preview" >> "$GITHUB_OUTPUT"
+            echo "flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=${{ steps.target.outputs.env }} --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build
+        run: vercel build ${{ steps.target.outputs.flag }} --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt ${{ steps.target.outputs.flag }} --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Summary
+        run: |
+          echo "### Deployed to **${{ steps.target.outputs.env }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"

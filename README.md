@@ -436,6 +436,31 @@ The app also reloads once when a new service worker takes control, so an
 installed PWA picks up a new build instead of running the old bundle until the
 user happens to cold-start it. It will not do this mid-run.
 
+### Continuous deployment
+
+`.github/workflows/deploy.yml` builds and deploys with the Vercel CLI on every
+push: the default branch (`claude/tartan-arcade-game-gwjdi2` — this repo has no
+`main`) becomes a **production** deploy, every other branch gets its own
+**preview** deploy. It reads `vercel.json` for build/output config, so the
+workflow itself only authenticates and calls the CLI.
+
+One-time setup:
+
+1. Create the project on Vercel once — import the repo from the Vercel
+   dashboard, or run `vercel link` from a machine with the CLI. This workflow
+   deploys to an existing project; it does not create one.
+2. In the GitHub repo, add three secrets under **Settings → Secrets and
+   variables → Actions**:
+
+   | Secret | Where to find it |
+   | --- | --- |
+   | `VERCEL_TOKEN` | vercel.com → Account Settings → Tokens → Create |
+   | `VERCEL_ORG_ID` | `.vercel/project.json` after `vercel link`, or Project → Settings → General |
+   | `VERCEL_PROJECT_ID` | `.vercel/project.json` after `vercel link`, or Project → Settings → General |
+
+Once those are set, every push deploys automatically; `workflow_dispatch` is
+also enabled for a manual re-run from the Actions tab.
+
 ## Project layout
 
 ```
