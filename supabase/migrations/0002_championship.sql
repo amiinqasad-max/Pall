@@ -937,6 +937,15 @@ begin
     raise exception 'not authenticated' using errcode = '28000';
   end if;
 
+  -- The Championship can legitimately be a brand-new anonymous player's very
+  -- first action -- unlike submit_run, nothing else guarantees a profiles
+  -- row exists yet. Without this, championship_leaderboard_page's join to
+  -- profiles silently drops them from the public Top-25 board (and, at
+  -- payout time, the admin screen would have no username to show for a real
+  -- winner) even though their challenge_participants/payouts rows are
+  -- correct. Mirrors the identical bootstrap insert in submit_run (0001).
+  insert into tartan.profiles (user_id) values (v_user) on conflict (user_id) do nothing;
+
   select * into v_challenge from tartan.daily_challenges where id = p_challenge_id;
   if not found or v_challenge.status <> 'active' then
     return 'challenge_not_active';
@@ -1366,6 +1375,74 @@ grant select on tartan.challenge_participants, tartan.challenge_qualifications, 
 grant select on tartan.challenge_payouts to authenticated;
 grant select on tartan.region_settings to anon, authenticated;
 grant select on tartan.daily_challenge_configs, tartan.challenge_disqualifications, tartan.challenge_audit_logs to authenticated;
+
+-- ------------------------------------------------------- function grants
+--
+-- PostgreSQL grants EXECUTE on every newly created function to PUBLIC by
+-- default unless it is explicitly revoked -- 0001_init.sql does that revoke
+-- for its two sensitive RPCs (submit_run, grant_coins) but nothing in this
+-- file did, for any of the ~25 functions above. Every function that checks
+-- auth.uid()/is_staff() internally was never exploitable through this gap
+-- alone, but tartan.compute_qualification_target() is: it is SECURITY
+-- DEFINER, was never meant to be called by anything except start_challenge(),
+-- and its own body runs an unrestricted percentile_cont() over
+-- challenge_qualifications for whatever challenge_id and percentile the
+-- caller supplies -- bypassing that table's "own row or staff" RLS entirely,
+-- because SECURITY DEFINER functions run as the table owner. Left as-is, any
+-- authenticated player could call it directly and extract other players'
+-- score distribution for any challenge, past or present. tartan.prune_analytics()
+-- and tartan.prune_runs() in 0001 have the same unrestricted-PUBLIC gap for a
+-- SECURITY DEFINER maintenance function, though with lower-value consequences.
+--
+-- Revoking PUBLIC's default here only removes that fallback; it does not
+-- touch any of the specific `grant execute ... to anon/authenticated`
+-- statements above or in 0001, which is why every legitimate client call
+-- (cross-checked against every sb.rpc(...) call site under src/services)
+-- keeps working unchanged.
+revoke execute on function tartan.compute_qualification_target(uuid, numeric, numeric, bigint, bigint, int, bigint) from public;
+revoke execute on function tartan.prune_analytics() from public;
+revoke execute on function tartan.prune_runs() from public;
+
+-- --------------------------------------------------------- security fix
+--
+-- 0001_init.sql's "profiles: update own" policy is row-scoped only
+-- (`auth.uid() = user_id and not banned`) — its own comment claims a player
+-- can never move their coin balance or ban state, but nothing in the actual
+-- USING/CHECK clause enforces that at the column level. Since coins now flow
+-- through this table from real-money purchases and Championship revives, a
+-- direct client UPDATE (or the existing sync push, which upserts the whole
+-- row including `coins` from the local, client-controlled save) could set
+-- `coins`/`lifetime_earned`/`lifetime_spent`/`best_score`/`flags`/`banned` to
+-- anything a non-negative check constraint allows, bypassing every RPC in
+-- this file entirely. This trigger makes the original comment's claim true:
+-- those columns snap back to their previous value on any UPDATE that isn't
+-- coming from a SECURITY DEFINER function (which runs as this migration's
+-- owning role, not `authenticated`/`anon`) — silently, not as an error, so
+-- the existing sync push still succeeds and simply has no effect on these
+-- columns; the next pull already treats the server's coins as authoritative
+-- (see applyCloudSave in src/state/store.ts) and reconciles automatically.
+create or replace function tartan.protect_profile_columns()
+returns trigger
+language plpgsql
+as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    new.coins := old.coins;
+    new.lifetime_earned := old.lifetime_earned;
+    new.lifetime_spent := old.lifetime_spent;
+    new.best_score := old.best_score;
+    new.flags := old.flags;
+    new.banned := old.banned;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_profile_columns on tartan.profiles;
+create trigger protect_profile_columns
+  before update on tartan.profiles
+  for each row
+  execute function tartan.protect_profile_columns();
 
 -- ------------------------------------------------------------- maintenance
 --

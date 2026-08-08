@@ -45,7 +45,9 @@ if (await collect.count()) {
   await page.waitForTimeout(400);
 }
 
-await page.locator('.playbtn').click();
+// See verify-control.mjs / smoke.mjs — the play button animates continuously
+// by design, so Playwright's default click-stability wait never resolves.
+await page.locator('.playbtn').click({ force: true });
 
 // Wait for the run to actually start rather than guessing at a duration: in
 // dev the engine chunk loads unbundled and the countdown is 1.8s on top.
