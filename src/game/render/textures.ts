@@ -293,35 +293,170 @@ export function generateBarTexture(scene: Phaser.Scene, key: string, color: numb
   return key;
 }
 
-/** Energy gate frame: an open rectangle the player passes through. */
-export function generateGateTexture(scene: Phaser.Scene, key: string, color: number, accent: number): string {
-  const size = 192;
+/** One vertex of a hexagon centred at (cx, cy), flat side up. */
+function hexPoint(cx: number, cy: number, r: number, rotation: number, i: number): [number, number] {
+  const angle = rotation + (Math.PI / 3) * i - Math.PI / 2;
+  return [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r];
+}
+
+/**
+ * A hexagon ring built from six independently-coloured edges rather than one
+ * stroke, so the palette visibly sweeps around it — the "holographic" read a
+ * single-colour ring can't give you. Each edge fades between two accent
+ * colours from the shared energy palette.
+ */
+function strokeHoloHex(ctx: Ctx, cx: number, cy: number, r: number, rotation: number, thickness: number, colors: number[]): void {
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 6; i++) {
+    const [x1, y1] = hexPoint(cx, cy, r, rotation, i);
+    const [x2, y2] = hexPoint(cx, cy, r, rotation, i + 1);
+    const c1 = colors[i % colors.length];
+    const c2 = colors[(i + 1) % colors.length];
+    const g = ctx.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, hex(c1, 0.95));
+    g.addColorStop(1, hex(c2, 0.95));
+    ctx.strokeStyle = g;
+    ctx.lineWidth = thickness;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+}
+
+/** The energy palette every gate texture draws from: cyan, electric blue, violet, magenta. */
+const ENERGY_RING_COLORS = [0x67e8f9, 0x22d3ee, 0x7c3aed, 0xd946ef];
+
+/**
+ * Energy gate arch: the decorative marker spanning the whole road above a
+ * gate obstacle. Three concentric holographic hex rings, nodes at every
+ * vertex, and a scatter of drifting sparks — additive-blended in the scene so
+ * the dark canvas background contributes nothing and only the rings glow.
+ */
+export function generateEnergyGateTexture(scene: Phaser.Scene, key: string): string {
+  const size = 320;
   const { ctx } = makeCanvas(scene, key, size);
-  const thickness = size * 0.11;
+  const c = size / 2;
+  const colors = ENERGY_RING_COLORS;
 
-  ctx.strokeStyle = hex(color, 0.9);
-  ctx.lineWidth = thickness;
-  ctx.lineJoin = 'round';
-  roundRect(ctx, thickness, thickness, size - thickness * 2, size - thickness * 2, 14);
-  ctx.stroke();
+  // Ambient bloom behind the rings — under additive blending this is what
+  // reads as the gate casting light onto the road around it.
+  const bloom = ctx.createRadialGradient(c, c, size * 0.08, c, c, size * 0.5);
+  bloom.addColorStop(0, 'rgba(34,211,238,0.16)');
+  bloom.addColorStop(0.55, 'rgba(124,58,237,0.09)');
+  bloom.addColorStop(1, 'rgba(124,58,237,0)');
+  ctx.fillStyle = bloom;
+  ctx.fillRect(0, 0, size, size);
 
-  ctx.strokeStyle = hex(accent, 0.85);
-  ctx.lineWidth = thickness * 0.32;
-  roundRect(ctx, thickness, thickness, size - thickness * 2, size - thickness * 2, 14);
-  ctx.stroke();
+  const rings: [number, number, number, number[]][] = [
+    [size * 0.46, 0, size * 0.022, colors],
+    [size * 0.34, Math.PI / 6, size * 0.018, [...colors].reverse()],
+    [size * 0.22, 0, size * 0.014, colors],
+  ];
+  for (const [r, rotation, thickness, ringColors] of rings) {
+    strokeHoloHex(ctx, c, c, r, rotation, thickness, ringColors);
+    // A bright emitter node at every vertex, like the ring is machinery
+    // rather than a painted line.
+    for (let i = 0; i < 6; i++) {
+      const [x, y] = hexPoint(c, c, r, rotation, i);
+      const node = ctx.createRadialGradient(x, y, 0, x, y, size * 0.035);
+      const color = ringColors[i % ringColors.length];
+      node.addColorStop(0, 'rgba(255,255,255,0.9)');
+      node.addColorStop(0.4, hex(color, 0.7));
+      node.addColorStop(1, hex(color, 0));
+      ctx.fillStyle = node;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
-  // Corner brackets, to sell it as machined rather than drawn.
-  ctx.fillStyle = hex(accent);
-  const b = size * 0.1;
-  for (const [x, y] of [
-    [thickness * 0.5, thickness * 0.5],
-    [size - thickness * 0.5 - b, thickness * 0.5],
-    [thickness * 0.5, size - thickness * 0.5 - b],
-    [size - thickness * 0.5 - b, size - thickness * 0.5 - b],
-  ]) {
-    roundRect(ctx, x, y, b, b, 3);
+  // Loose sparks drifting between the rings.
+  const sparkAngles = [0.4, 1.3, 2.1, 3.0, 3.7, 4.6, 5.4, 6.0];
+  for (let i = 0; i < sparkAngles.length; i++) {
+    const radius = size * (0.26 + (i % 3) * 0.07);
+    const x = c + Math.cos(sparkAngles[i]) * radius;
+    const y = c + Math.sin(sparkAngles[i]) * radius;
+    const color = colors[i % colors.length];
+    const spark = ctx.createRadialGradient(x, y, 0, x, y, size * 0.022);
+    spark.addColorStop(0, 'rgba(255,255,255,0.95)');
+    spark.addColorStop(1, hex(color, 0));
+    ctx.fillStyle = spark;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.022, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  commit(scene, key);
+  return key;
+}
+
+/**
+ * Energy gate hazard panel: the solid, lethal span drawn over every blocked
+ * lane. Unlike the arch, this stays opaque and dense — a slab of dark energy
+ * with a magenta containment field along its edges — because this is the
+ * part a player dies against, and it must never read as decoration.
+ */
+export function generateEnergyHazardTexture(scene: Phaser.Scene, key: string): string {
+  const size = 192;
+  const { ctx } = makeCanvas(scene, key, size);
+  const inset = size * 0.07;
+
+  // The dark core. Opaque enough that it reads as solid at a glance.
+  const core = ctx.createLinearGradient(0, 0, 0, size);
+  core.addColorStop(0, 'rgba(32,10,44,0.92)');
+  core.addColorStop(0.5, 'rgba(10,6,20,0.95)');
+  core.addColorStop(1, 'rgba(32,10,44,0.92)');
+  ctx.fillStyle = core;
+  roundRect(ctx, inset, inset, size - inset * 2, size - inset * 2, size * 0.06);
+  ctx.fill();
+
+  // Cyan circuit traces — the holographic detail that ties it to the rest of
+  // the gate without competing with the hazard colour.
+  ctx.save();
+  roundRect(ctx, inset, inset, size - inset * 2, size - inset * 2, size * 0.06);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(103,232,249,0.32)';
+  ctx.lineWidth = size * 0.008;
+  for (const t of [0.28, 0.5, 0.72]) {
+    ctx.beginPath();
+    ctx.moveTo(inset, size * t);
+    ctx.lineTo(size - inset, size * t);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // The containment field: a hot magenta glow down each edge. This is the
+  // one colour reserved for "this will end your run" — nothing else in the
+  // gate uses it this saturated.
+  for (const side of [inset, size - inset]) {
+    const edge = ctx.createLinearGradient(side - size * 0.16, 0, side + size * 0.16, 0);
+    edge.addColorStop(0, 'rgba(217,70,239,0)');
+    edge.addColorStop(0.5, 'rgba(232,121,249,0.95)');
+    edge.addColorStop(1, 'rgba(217,70,239,0)');
+    ctx.fillStyle = edge;
+    ctx.fillRect(side - size * 0.16, 0, size * 0.32, size);
+  }
+
+  // Hazard brackets top and bottom — the "this is armed" tell, echoed from
+  // the machined-corner language the rest of the obstacle set already uses.
+  ctx.fillStyle = 'rgba(232,121,249,0.9)';
+  const b = size * 0.12;
+  const brackets: [number, number][] = [
+    [inset, inset],
+    [size - inset - b, inset],
+    [inset, size - inset - size * 0.05],
+    [size - inset - b, size - inset - size * 0.05],
+  ];
+  for (const [x, y] of brackets) {
+    roundRect(ctx, x, y, b, size * 0.05, 3);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = 'rgba(103,232,249,0.5)';
+  ctx.lineWidth = size * 0.018;
+  roundRect(ctx, inset, inset, size - inset * 2, size - inset * 2, size * 0.06);
+  ctx.stroke();
 
   commit(scene, key);
   return key;
@@ -462,7 +597,7 @@ export function generateSharedTextures(scene: Phaser.Scene): void {
   generateSlabTexture(scene, 'obstacle.platform', { top: 0x2a3550, body: 0x18203a, accent: 0x818cf8, stripes: false });
   generateBarTexture(scene, 'obstacle.bar', 0x1b3a4a, 0x38bdf8);
   generateBarTexture(scene, 'obstacle.spinner', 0x3a1b4a, 0xe879f9);
-  generateGateTexture(scene, 'obstacle.gate', 0x0f766e, 0x2dd4bf);
-  generateGateTexture(scene, 'obstacle.gate.hazard', 0x7f1d1d, 0xf87171);
+  generateEnergyGateTexture(scene, 'obstacle.gate');
+  generateEnergyHazardTexture(scene, 'obstacle.gate.hazard');
   generateLaserTexture(scene, 'obstacle.laser', 0xf43f5e);
 }

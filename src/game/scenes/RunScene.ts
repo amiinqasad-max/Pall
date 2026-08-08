@@ -1081,11 +1081,18 @@ export class RunScene extends Phaser.Scene {
         // Fake the pivot by squashing the bar rather than rotating a quad in
         // screen space, which would not match the projection.
         sprite.setAngle(Math.sin(this.runTime * obstacle.rate + obstacle.phase) * 6);
+      } else if (obstacle.type === 'gate') {
+        // A fast, tight flicker on the containment field — reads as live
+        // current rather than a printed panel, without ever dimming enough to
+        // soften how solid it looks.
+        const flicker = 0.92 + Math.sin(this.runTime * 24 + index * 1.7 + e * 2.3) * 0.08;
+        sprite.setAlpha(flicker * (1 - fog * 0.15));
       }
     }
 
-    // Gate frame: a decorative outline around the whole road, drawn on top of
-    // the solid panels so the safe lane reads as an opening.
+    // Gate arch: a decorative hex-ring marker spanning the whole road, drawn
+    // on top of the solid panels so the safe lane reads as an opening in it
+    // rather than a gap that happens to have no panel.
     if (obstacle.type === 'gate') {
       const projected = this.projector.project(this.camera, 0, roadY + 2.6, obstacle.z, curve);
       if (projected.visible) {
@@ -1096,7 +1103,10 @@ export class RunScene extends Phaser.Scene {
           frame.setDisplaySize(GAME.world.roadHalfWidth * 2.2 * projected.scale, 5.6 * projected.scale);
           frame.setDepth(depthBase + index * 0.0001 + 0.00005);
           frame.setBlendMode(Phaser.BlendModes.ADD);
-          frame.setAlpha(0.75 * (1 - fog));
+          // A slow breathing glow, independent of the hazard panels' flicker,
+          // so the arch reads as ambient energy rather than a warning light.
+          const breathe = 0.82 + Math.sin(this.runTime * 2.2 + obstacle.phase * 4) * 0.18;
+          frame.setAlpha(breathe * (1 - fog));
         }
       }
     }
