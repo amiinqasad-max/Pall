@@ -260,7 +260,13 @@ export function PlayScreen() {
     // Remounting the screen is the cleanest possible reset: the effect above
     // tears the old canvas down and builds a fresh one.
     go('home');
-    setTimeout(() => go('play'), 30);
+    setTimeout(() => {
+      // Guard against a stray forced navigation: if the player backed out to
+      // somewhere other than home during this 30ms window (a rapid tap on the
+      // nav bar, the Android back gesture), this must not yank them back into
+      // a new run they no longer asked for.
+      if (useUi.getState().screen === 'home') go('play');
+    }, 30);
   };
 
   const exit = (): void => {

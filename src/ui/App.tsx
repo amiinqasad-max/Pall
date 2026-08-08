@@ -80,6 +80,14 @@ export function App() {
     audio.configure(settings);
     haptics.setEnabled(settings.haptics);
     analytics.setEnabled(settings.analytics);
+
+    // Exposes the resolved quality tier as a root attribute so the menu
+    // chrome (card float, play-button breathe/sheen, nav-dot pulse, etc. in
+    // global.css) can shed itself on the weakest devices independently of
+    // the OS-level prefers-reduced-motion flag — a device can be ultraLow
+    // without the player having asked for reduced motion.
+    const resolved = settings.quality === 'auto' ? detectDevice().tier : settings.quality;
+    document.documentElement.dataset.perfTier = resolved;
   }, [settings]);
 
   // --- Audio unlock -----------------------------------------------------------

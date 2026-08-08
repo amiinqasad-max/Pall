@@ -21,7 +21,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { createRng, hashString } from '@/core/rng';
-import { detectDevice } from '@/systems/device';
+import { detectDevice, isLiteTier } from '@/systems/device';
 
 /** How far each layer travels, in pixels, at full deflection. */
 const DEPTH = {
@@ -49,7 +49,7 @@ export function MenuBackdrop({ paused = false }: Props) {
   const floor = useRef<HTMLDivElement>(null);
 
   const device = useMemo(() => detectDevice(), []);
-  const lite = device.tier === 'low';
+  const lite = isLiteTier(device.tier);
   const still = device.reducedMotion;
 
   // Deterministic so the sky is the same one every session — a starfield that

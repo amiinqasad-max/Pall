@@ -9,6 +9,15 @@ import { isBackendConfigured } from '@/services/supabase';
 import { Button, IconButton, Panel, Sheet } from '@/ui/components/primitives';
 import type { PerfTier } from '@/types';
 
+/** 'UltraLow' from naive capitalisation reads as one odd word; spell it out. */
+const QUALITY_LABELS: Record<PerfTier | 'auto', string> = {
+  auto: 'Auto',
+  ultraLow: 'Ultra low',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
 export function SettingsScreen() {
   const go = useUi((s) => s.go);
   const toast = useUi((s) => s.toast);
@@ -84,8 +93,8 @@ export function SettingsScreen() {
           </Panel>
 
           <Panel title="Performance">
-            <div className="row" style={{ marginBottom: 'var(--sp-2)' }}>
-              {(['auto', 'low', 'medium', 'high'] as const).map((option) => (
+            <div className="row" style={{ marginBottom: 'var(--sp-2)', flexWrap: 'wrap' }}>
+              {(['auto', 'ultraLow', 'low', 'medium', 'high'] as const).map((option) => (
                 <button
                   key={option}
                   className={`btn btn--sm ${settings.quality === option ? 'btn--primary' : ''}`}
@@ -95,7 +104,7 @@ export function SettingsScreen() {
                     audio.play('ui.toggle');
                   }}
                 >
-                  {option === 'auto' ? 'Auto' : option[0].toUpperCase() + option.slice(1)}
+                  {QUALITY_LABELS[option]}
                 </button>
               ))}
             </div>

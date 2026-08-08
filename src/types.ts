@@ -139,7 +139,7 @@ export interface LeaderboardEntry {
 
 export type LeaderboardScope = 'global' | 'daily' | 'weekly';
 
-export type PerfTier = 'low' | 'medium' | 'high';
+export type PerfTier = 'ultraLow' | 'low' | 'medium' | 'high';
 
 export interface Settings {
   musicVolume: number;
