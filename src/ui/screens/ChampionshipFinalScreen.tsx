@@ -1,5 +1,9 @@
 /**
- * The Championship final: free entry, starts at zero, no paid advantages.
+ * The Championship final: free entry, starts at zero, no entry fee, no
+ * purchase necessary. Coins and Coin-priced revives ARE allowed here —
+ * a qualified player's normal, single Coin balance (gameplay rewards, Watch
+ * Video, Read Article, or purchase — the source is never distinguished)
+ * works exactly as it does outside the Championship.
  *
  * Everything a qualified player needs is here — their own score/rank/prize
  * preview and the live Top 25 — reusing the same listrow markup as the
@@ -10,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import { useUi } from '@/state/ui';
 import { useChampionship } from '@/state/championship';
-import { fetchPrizeAtRank } from '@/services/championship';
+import { fetchPrizeAtRank, REVIVE_COST_COINS } from '@/services/championship';
 import { Button, EmptyState, IconButton, Panel } from '@/ui/components/primitives';
 import { num, ordinal } from '@/core/format';
 import { formatCountdown } from '@/core/time';
@@ -135,7 +139,7 @@ export function ChampionshipFinalScreen() {
               </button>
               <p className="tiny dim center" style={{ margin: 0 }}>
                 {attemptsLeft} of {challenge.maxFinalAttempts ?? 0} attempts remaining · your best score counts ·
-                entry is free · coins and revives are disabled here
+                entry is free · Coins work here too — revive for {REVIVE_COST_COINS} 🪙
               </p>
             </>
           )}

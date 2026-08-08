@@ -250,9 +250,11 @@ export function PlayScreen() {
     engine.current?.finishGame();
   };
 
-  // Coin-priced revive. Never reachable during a Championship final: `die()`
-  // in RunScene sets `canContinue = false` there, so the offer phase this
-  // button lives in is never entered in the first place — see RunScene.die().
+  // Coin-priced revive. Allowed in every phase, including a Championship
+  // final — a qualified player's normal Coin balance (gameplay rewards,
+  // Watch Video, Read Article, or purchased) funds a revive here exactly as
+  // it does outside the Championship. See RunScene.die()'s `canContinue`
+  // and supabase/migrations/0003_coin_economy.sql for the server side.
   const takeRevive = async (): Promise<void> => {
     if (busy || reviving) return;
     setReviving(true);
@@ -395,12 +397,21 @@ export function PlayScreen() {
               Keep this run alive. One continue per run.
             </p>
             <div className="stack">
-              <Button variant="amber" size="lg" block disabled={busy} onClick={() => void takeContinue()}>
-                {busy ? 'Loading…' : '▶ Watch ad to continue'}
-              </Button>
-              {/* Normal-game monetization only — this offer phase is never
-                  entered at all during a Championship final, so there is no
-                  separate check needed here to keep it out of that mode. */}
+              {/* Ad-based continue stays out of the Championship final —
+                  that restriction is unchanged by the Coin/Revive rule
+                  change below, and is enforced here in the UI rather than
+                  in RunScene, since `canContinue` no longer distinguishes
+                  phases. */}
+              {loadout.current.championshipPhase !== 'final' && (
+                <Button variant="amber" size="lg" block disabled={busy} onClick={() => void takeContinue()}>
+                  {busy ? 'Loading…' : '▶ Watch ad to continue'}
+                </Button>
+              )}
+              {/* Coin-priced revive: allowed in every phase, including the
+                  Championship final. Coins used here are the player's
+                  normal, single server-authoritative balance regardless of
+                  how they were earned — see RunScene.die() and
+                  supabase/migrations/0003_coin_economy.sql. */}
               <Button
                 variant="default"
                 block

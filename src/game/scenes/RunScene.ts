@@ -57,9 +57,14 @@ export interface RunConfig {
   /**
    * Set when this run counts toward the Championship. The caller (PlayScreen)
    * is responsible for passing the matching challenge-wide `seed` alongside
-   * this so every participant faces the identical track; `championshipPhase`
-   * itself is what `die()` reads to structurally guarantee "no paid
-   * advantages in the final" (see below). Omitted entirely for a normal run.
+   * this so every participant faces the identical track. `die()` no longer
+   * reads this to suppress continues in the 'final' phase — Coins and
+   * Revives are explicitly allowed there now (a qualified player's normal
+   * Coin balance funds a revive the same way it does outside the
+   * Championship, see supabase/migrations/0003_coin_economy.sql). Kept for
+   * the seed selection above and for the ad-based "watch ad to continue"
+   * offer, which PlayScreen still hides during the final. Omitted entirely
+   * for a normal run.
    */
   championshipPhase?: 'qualifying' | 'final';
 }
@@ -942,11 +947,13 @@ export class RunScene extends Phaser.Scene {
     }
     this.trailEmitter?.stop();
 
-    // Championship final: no continue exists here at all, paid or ad-based —
-    // not hidden in the UI, structurally absent from this code path. This is
-    // the one line that makes "no paid advantages in the final" true rather
-    // than merely intended.
-    const canContinue = this.config.championshipPhase !== 'final' && !this.continued && this.runTime > 8;
+    // Continue/revive is allowed in the Championship final: a qualified
+    // player may spend Coins from their normal balance — however earned —
+    // to revive here exactly like a normal run. `continued` still caps it at
+    // one revive per run, in every phase. (PlayScreen separately hides the
+    // ad-based "watch ad to continue" offer during the final; that
+    // restriction is unchanged and lives entirely in the UI layer, not here.)
+    const canContinue = !this.continued && this.runTime > 8;
     analytics.track('run_death', {
       cause,
       distance: Math.round(this.distance),

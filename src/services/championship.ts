@@ -30,12 +30,13 @@ import type {
 const LEADERBOARD_CACHE_TTL_MS = 20_000;
 
 /**
- * Mirrors `game_constants.revive_cost_coins` in
- * supabase/migrations/0002_championship.sql — the server is what actually
- * enforces this (spend_coins_for_revive reads the real row), this is only
- * for display before the request goes out. Keep the two in step.
+ * Mirrors `game_constants.revive_cost_coins`, set to 100 in
+ * supabase/migrations/0003_coin_economy.sql (was 50 at launch in 0002) —
+ * the server is what actually enforces this (spend_coins_for_revive reads
+ * the real row), this is only for display before the request goes out.
+ * Keep the two in step.
  */
-export const REVIVE_COST_COINS = 50;
+export const REVIVE_COST_COINS = 100;
 
 interface LeaderboardCacheEntry {
   at: number;

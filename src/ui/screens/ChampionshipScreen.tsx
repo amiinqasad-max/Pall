@@ -211,8 +211,8 @@ export function ChampionshipScreen() {
               Final Championship
             </p>
             <p className="tiny dim" style={{ margin: 0 }}>
-              Everyone starts from 0. Coins and revives — paid or otherwise — are disabled during the final. It’s
-              skill only, from here.
+              Everyone starts from 0 — no entry fee, no paid advantage. Your normal Coin balance still works here,
+              though: a Coin-priced revive is allowed, same as any other run.
             </p>
           </div>
           <Button
@@ -241,8 +241,9 @@ export function ChampionshipScreen() {
               after the fact.
             </p>
             <p className="small" style={{ margin: 0 }}>
-              3. Once qualified, the Championship final starts everyone at zero. No entry fee, no paid advantage —
-              coins, revives and other purchases cannot be used there.
+              3. Once qualified, the Championship final starts everyone at zero — no entry fee, no purchase
+              necessary. Your Coins carry over, though: spend them on a revive there exactly like a normal run,
+              however those Coins were earned.
             </p>
             <p className="small" style={{ margin: 0 }}>
               4. When the final closes, the Top {challenge.winnerCount ?? 25} scores share the prize pool. Ranks are

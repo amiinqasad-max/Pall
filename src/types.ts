@@ -210,6 +210,49 @@ export interface CoinPackage {
   priceUsdCents: number;
 }
 
+// --- Coin economy (Watch Video / Read Article earn methods) --------------
+//
+// Server-authoritative and separate from the local `CoinSource`/`LedgerEntry`
+// pair above, which stays exactly as it was — these read from
+// tartan.economy_status()/coin_history() (supabase/migrations/0003_coin_economy.sql),
+// never from local save state.
+
+/** Everything the Coins tab needs to render in one round trip: balance, the
+ *  two earn methods' reward amounts, today's progress against their
+ *  admin-configured daily caps, and the current revive cost. */
+export interface EconomyStatus {
+  coins: number;
+  videoRewardCoins: number;
+  videoRewardDailyLimit: number;
+  videoClaimsToday: number;
+  articleRewardCoins: number;
+  articleRewardDailyLimit: number;
+  articleClaimsToday: number;
+  reviveCostCoins: number;
+}
+
+/** The status string every claim RPC returns — every value here is a real,
+ *  expected outcome the UI reacts to, not just a success/failure bit. */
+export type CoinRewardClaimResult =
+  | 'credited'
+  | 'already_claimed'
+  | 'too_early'
+  | 'daily_limit_reached'
+  | 'not_found'
+  | 'offline'
+  | 'not_signed_in';
+
+/** One row from tartan.coin_history() — merges the coin_ledger (rewarded_ad/
+ *  daily_challenge/daily_reward) and coin_transactions (purchase_credit/
+ *  revive_spend/video_reward/article_reward) tables into one read. */
+export interface CoinHistoryEntry {
+  amount: number;
+  reason: string;
+  detail: string | null;
+  balanceAfter: number;
+  createdAt: string;
+}
+
 export interface Settings {
   musicVolume: number;
   sfxVolume: number;

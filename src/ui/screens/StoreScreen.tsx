@@ -1,22 +1,39 @@
 /**
  * The store.
  *
- * Cosmetics only. There is no bundle, no gacha, no timer, and nothing here
+ * Cosmetics, plus the Coins tab: earn (limited gameplay rewards handled
+ * elsewhere in Missions, Watch Video, Read Article) and buy. There is no
+ * bundle, no gacha, no timer on the cosmetics side, and nothing sold here
  * changes how the ball handles — the copy says so plainly, because a player
  * who suspects pay-to-win stops trusting the leaderboard.
  */
 
 import { useEffect, useState } from 'react';
 import { SKINS, TRAILS, evaluateUnlock } from '@/data/cosmetics';
+import { ARTICLES, type Article } from '@/data/articles';
 import { useCoins, useLevel, useStore } from '@/state/store';
+import { useEconomy } from '@/state/economy';
 import { useUi } from '@/state/ui';
-import { AD_REWARDS, ads } from '@/systems/ads';
+import { ads } from '@/systems/ads';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { fetchCoinPackages, recordPurchaseAttempt } from '@/services/championship';
-import { Button, CoinChip, IconButton, Sheet, Tabs } from '@/ui/components/primitives';
+import { ARTICLE_MIN_READ_SECONDS } from '@/services/coinEconomy';
+import { Button, CoinChip, IconButton, Panel, Sheet, Tabs } from '@/ui/components/primitives';
+import { ArticleReaderSheet } from '@/ui/components/ArticleReaderSheet';
+import { CoinHistorySheet } from '@/ui/components/CoinHistorySheet';
 import { num } from '@/core/format';
-import type { Cosmetic, CoinPackage } from '@/types';
+import type { Cosmetic, CoinPackage, CoinRewardClaimResult } from '@/types';
+
+const CLAIM_MESSAGES: Record<CoinRewardClaimResult, string> = {
+  credited: 'Reward granted',
+  already_claimed: 'Already claimed',
+  too_early: 'Not quite yet',
+  daily_limit_reached: 'Today’s limit reached — come back tomorrow',
+  not_found: 'Reward not granted',
+  offline: 'Couldn’t reach the server — try again',
+  not_signed_in: 'Not signed in',
+};
 
 /**
  * No real payment processor is wired into this build — buying a package
@@ -38,13 +55,19 @@ export function StoreScreen() {
   const equipped = useStore((s) => s.save.equipped);
   const purchase = useStore((s) => s.purchase);
   const equip = useStore((s) => s.equip);
-  const earnCoins = useStore((s) => s.earnCoins);
+
+  const economyStatus = useEconomy((s) => s.status);
+  const refreshEconomy = useEconomy((s) => s.refresh);
+  const startVideo = useEconomy((s) => s.startVideo);
+  const claimVideo = useEconomy((s) => s.claimVideo);
 
   const [tab, setTab] = useState<'skin' | 'trail' | 'coins'>('skin');
   const [selected, setSelected] = useState<Cosmetic | null>(null);
   const [busy, setBusy] = useState(false);
   const [packages, setPackages] = useState<CoinPackage[]>([]);
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [readingArticle, setReadingArticle] = useState<Article | null>(null);
 
   const items: Cosmetic[] = tab === 'skin' ? SKINS : tab === 'trail' ? TRAILS : [];
 
@@ -52,7 +75,8 @@ export function StoreScreen() {
     if (tab === 'coins' && packages.length === 0) {
       void fetchCoinPackages().then(setPackages);
     }
-  }, [tab, packages.length]);
+    if (tab === 'coins') void refreshEconomy();
+  }, [tab, packages.length, refreshEconomy]);
 
   const buyPackage = async (pkg: CoinPackage): Promise<void> => {
     if (purchasing) return;
@@ -83,19 +107,46 @@ export function StoreScreen() {
     else if (result.error === 'needs_level') toast('Level requirement not met', 'error');
   };
 
-  const watchForCoins = async (): Promise<void> => {
+  // Watch Video: starts a real server session first (so the minimum-watch
+  // floor is measured against the server's own clock), only asks the ad
+  // provider to actually serve a rewarded video, and only claims the reward
+  // once that provider reports completion — never merely because the ad
+  // started. The daily cap and replay protection are enforced by
+  // claim_video_reward itself; this is just the UI around it.
+  const watchVideo = async (): Promise<void> => {
     if (busy) return;
     setBusy(true);
-    const outcome = await ads.rewarded('reward_coins');
-    setBusy(false);
+    const sessionId = await startVideo();
+    if (!sessionId) {
+      setBusy(false);
+      toast('Couldn’t start that right now', 'error');
+      return;
+    }
+    const outcome = await ads.rewarded('reward_video_coins');
     if (!outcome.completed) {
+      setBusy(false);
       toast('Reward not granted', 'error');
       return;
     }
-    earnCoins('rewarded_ad', AD_REWARDS.reward_coins, 'Store bonus');
-    audio.play('coin');
-    haptics.fire('reward');
-    toast(`+${AD_REWARDS.reward_coins} coins`, 'reward', '🪙');
+    const result = await claimVideo(sessionId);
+    setBusy(false);
+    if (result === 'credited') {
+      audio.play('coin');
+      haptics.fire('reward');
+      toast(`+${economyStatus?.videoRewardCoins ?? 10} coins`, 'reward', '🪙');
+    } else {
+      toast(CLAIM_MESSAGES[result], 'error');
+    }
+  };
+
+  const onArticleResult = (result: string): void => {
+    if (result === 'credited') {
+      audio.play('coin');
+      haptics.fire('reward');
+      toast(`+${economyStatus?.articleRewardCoins ?? 30} coins`, 'reward', '🪙');
+    } else {
+      toast(CLAIM_MESSAGES[result as CoinRewardClaimResult] ?? 'Reward not granted', 'error');
+    }
   };
 
   return (
@@ -118,9 +169,90 @@ export function StoreScreen() {
         />
 
         {tab === 'coins' && (
-          <>
+          <div className="stack">
+            {/* COIN BALANCE */}
+            <Panel
+              title="🪙 YOUR COINS"
+              tone="amber"
+              action={
+                <Button variant="ghost" onClick={() => setShowHistory(true)}>
+                  History
+                </Button>
+              }
+            >
+              <div className="strong" style={{ fontSize: '1.6rem' }}>
+                {num(coins)}
+              </div>
+            </Panel>
+
+            {/* EARN COINS */}
+            <p className="tiny muted" style={{ margin: 0 }}>
+              EARN COINS
+            </p>
+
+            <Panel>
+              <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="strong">▶ Watch Video</div>
+                  <div className="small muted">
+                    Today: {num((economyStatus?.videoClaimsToday ?? 0) * (economyStatus?.videoRewardCoins ?? 10))}/
+                    {num((economyStatus?.videoRewardDailyLimit ?? 0) * (economyStatus?.videoRewardCoins ?? 10))} Coins
+                    earned
+                  </div>
+                </div>
+                <div className="strong numeric">+{economyStatus?.videoRewardCoins ?? 10} 🪙</div>
+              </div>
+              <Button
+                variant="amber"
+                block
+                disabled={
+                  busy ||
+                  (economyStatus != null && economyStatus.videoClaimsToday >= economyStatus.videoRewardDailyLimit)
+                }
+                onClick={() => void watchVideo()}
+              >
+                {busy
+                  ? 'Loading…'
+                  : economyStatus != null && economyStatus.videoClaimsToday >= economyStatus.videoRewardDailyLimit
+                    ? 'Daily limit reached'
+                    : 'WATCH VIDEO'}
+              </Button>
+            </Panel>
+
+            <Panel>
+              <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="strong">📖 Read Article</div>
+                  <div className="small muted">
+                    {Math.ceil(ARTICLE_MIN_READ_SECONDS / 60)} min read · Today:{' '}
+                    {economyStatus?.articleClaimsToday ?? 0}/{economyStatus?.articleRewardDailyLimit ?? 0}
+                  </div>
+                </div>
+                <div className="strong numeric">+{economyStatus?.articleRewardCoins ?? 30} 🪙</div>
+              </div>
+              <Button
+                variant="amber"
+                block
+                disabled={
+                  economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
+                }
+                onClick={() =>
+                  setReadingArticle(ARTICLES[Math.floor(Math.random() * ARTICLES.length)] ?? ARTICLES[0])
+                }
+              >
+                {economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
+                  ? 'Daily limit reached'
+                  : 'READ ARTICLE'}
+              </Button>
+            </Panel>
+
+            {/* BUY COINS */}
+            <p className="tiny muted" style={{ margin: 0 }}>
+              BUY COINS
+            </p>
+
             {!PAYMENTS_LIVE && (
-              <div className="panel panel--amber center" style={{ marginBottom: 'var(--sp-3)' }}>
+              <div className="panel panel--amber center">
                 <p className="tiny" style={{ margin: 0 }}>
                   Payments aren’t connected in this build yet — buying a package records the request for review
                   rather than charging you or granting coins immediately.
@@ -143,11 +275,11 @@ export function StoreScreen() {
                 </button>
               ))}
             </div>
-            <p className="tiny dim center" style={{ marginTop: 'var(--sp-4)' }}>
+            <p className="tiny dim center" style={{ margin: 0 }}>
               Coins are a virtual in-game currency with no cash value. Coins cannot be withdrawn, exchanged, or
               converted into real money.
             </p>
-          </>
+          </div>
         )}
 
         {tab !== 'coins' && (
@@ -189,23 +321,9 @@ export function StoreScreen() {
           })}
         </div>
 
-        <div className="panel" style={{ marginTop: 'var(--sp-4)' }}>
-          <div className="row row--between" style={{ marginBottom: 'var(--sp-3)' }}>
-            <div style={{ minWidth: 0 }}>
-              <div className="strong">Need coins?</div>
-              <div className="small muted">
-                Coins come from rewarded ads, the daily challenge, and login rewards. Never from playing — so the
-                leaderboard stays about skill.
-              </div>
-            </div>
-          </div>
-          <Button variant="amber" block disabled={busy} onClick={() => void watchForCoins()}>
-            {busy ? 'Loading…' : `▶ Watch ad for ${AD_REWARDS.reward_coins} coins`}
-          </Button>
-        </div>
-
         <p className="tiny dim center" style={{ marginTop: 'var(--sp-4)' }}>
-          Every item is cosmetic. Nothing sold here changes speed, control or difficulty.
+          Every item is cosmetic. Nothing sold here changes speed, control or difficulty. Need coins? Head to the
+          Coins tab above — watch a video, read an article, or buy a pack.
         </p>
         </>
         )}
@@ -221,6 +339,18 @@ export function StoreScreen() {
             Close
           </Button>
         </Sheet>
+      )}
+
+      {showHistory && <CoinHistorySheet onClose={() => setShowHistory(false)} />}
+
+      {readingArticle && (
+        <ArticleReaderSheet
+          article={readingArticle}
+          minReadSeconds={ARTICLE_MIN_READ_SECONDS}
+          rewardCoins={economyStatus?.articleRewardCoins ?? 30}
+          onClose={() => setReadingArticle(null)}
+          onResult={onArticleResult}
+        />
       )}
     </>
   );

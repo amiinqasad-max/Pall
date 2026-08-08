@@ -233,3 +233,63 @@ export async function updateRegionSetting(country: string, enabled: boolean, min
   });
   return !error;
 }
+
+// --- Coin economy config (supabase/migrations/0003_coin_economy.sql) -------
+
+export interface AdminEconomyConfig {
+  videoRewardCoins: number;
+  videoRewardDailyLimit: number;
+  videoMinWatchSeconds: number;
+  articleRewardCoins: number;
+  articleRewardDailyLimit: number;
+  articleMinReadSeconds: number;
+  reviveCostCoins: number;
+}
+
+/** Reads straight off tartan.game_constants (already public-select, see
+ *  0001_init.sql) rather than a dedicated RPC — there's nothing sensitive
+ *  in these values, and the table is the single source of truth every RPC
+ *  (spend_coins_for_revive, claim_video_reward, claim_article_reward,
+ *  economy_status) already reads from directly. */
+export async function fetchEconomyConfig(): Promise<AdminEconomyConfig | null> {
+  const sb = await supabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('game_constants')
+    .select('key, value')
+    .in('key', [
+      'video_reward_coins',
+      'video_reward_daily_limit',
+      'video_min_watch_seconds',
+      'article_reward_coins',
+      'article_reward_daily_limit',
+      'article_min_read_seconds',
+      'revive_cost_coins',
+    ]);
+  if (error || !data) return null;
+  const byKey = Object.fromEntries((data as { key: string; value: number }[]).map((r) => [r.key, Number(r.value)]));
+  return {
+    videoRewardCoins: byKey.video_reward_coins ?? 10,
+    videoRewardDailyLimit: byKey.video_reward_daily_limit ?? 10,
+    videoMinWatchSeconds: byKey.video_min_watch_seconds ?? 8,
+    articleRewardCoins: byKey.article_reward_coins ?? 30,
+    articleRewardDailyLimit: byKey.article_reward_daily_limit ?? 3,
+    articleMinReadSeconds: byKey.article_min_read_seconds ?? 120,
+    reviveCostCoins: byKey.revive_cost_coins ?? 100,
+  };
+}
+
+export async function updateEconomyConfig(cfg: AdminEconomyConfig): Promise<boolean> {
+  const sb = await supabase();
+  if (!sb) return false;
+  const { error } = await sb.rpc('admin_update_economy_config', {
+    p_video_reward_coins: cfg.videoRewardCoins,
+    p_video_reward_daily_limit: cfg.videoRewardDailyLimit,
+    p_video_min_watch_seconds: cfg.videoMinWatchSeconds,
+    p_article_reward_coins: cfg.articleRewardCoins,
+    p_article_reward_daily_limit: cfg.articleRewardDailyLimit,
+    p_article_min_read_seconds: cfg.articleMinReadSeconds,
+    p_revive_cost_coins: cfg.reviveCostCoins,
+  });
+  return !error;
+}

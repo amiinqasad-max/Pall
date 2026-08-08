@@ -17,6 +17,7 @@ import {
   endChallenge,
   fetchChallengeConfig,
   fetchChallengeMonitoring,
+  fetchEconomyConfig,
   fetchPayouts,
   fetchRecentChallenges,
   isStaff,
@@ -27,9 +28,11 @@ import {
   resumeChallenge,
   startChallenge,
   updateChallengeConfig,
+  updateEconomyConfig,
   updateRegionSetting,
   type AdminChallengeConfig,
   type AdminChallengeRow,
+  type AdminEconomyConfig,
   type AdminPayoutRow,
   type ChallengeMonitoring,
 } from '@/services/admin';
@@ -45,6 +48,7 @@ export function AdminChallengeScreen() {
   const [monitoring, setMonitoring] = useState<ChallengeMonitoring | null>(null);
   const [config, setConfig] = useState<AdminChallengeConfig | null>(null);
   const [prizeDistributionText, setPrizeDistributionText] = useState('');
+  const [economyConfig, setEconomyConfig] = useState<AdminEconomyConfig | null>(null);
   const [payouts, setPayouts] = useState<AdminPayoutRow[]>([]);
   const [payoutRefs, setPayoutRefs] = useState<Record<string, string>>({});
   const [newDate, setNewDate] = useState('');
@@ -68,6 +72,7 @@ export function AdminChallengeScreen() {
       setConfig(cfg);
       if (cfg) setPrizeDistributionText(JSON.stringify(cfg.defaultPrizeDistribution, null, 2));
     });
+    void fetchEconomyConfig().then(setEconomyConfig);
   }, [authorized]);
 
   const reloadPayouts = async (challengeId: string): Promise<void> => {
@@ -403,6 +408,47 @@ export function AdminChallengeScreen() {
               policy for a region before enabling it.
             </p>
           </Panel>
+
+          {economyConfig && (
+            <Panel title="Coin economy">
+              <div className="stack stack--tight">
+                {(
+                  [
+                    ['Revive cost (coins)', 'reviveCostCoins'],
+                    ['Watch Video reward (coins)', 'videoRewardCoins'],
+                    ['Watch Video daily limit', 'videoRewardDailyLimit'],
+                    ['Watch Video minimum watch time (s)', 'videoMinWatchSeconds'],
+                    ['Read Article reward (coins)', 'articleRewardCoins'],
+                    ['Read Article daily limit', 'articleRewardDailyLimit'],
+                    ['Read Article minimum read time (s)', 'articleMinReadSeconds'],
+                  ] as [string, keyof AdminEconomyConfig][]
+                ).map(([label, key]) => (
+                  <label key={key} className="row row--between small">
+                    <span>{label}</span>
+                    <input
+                      type="number"
+                      value={economyConfig[key]}
+                      onChange={(e) => setEconomyConfig({ ...economyConfig, [key]: Number(e.target.value) })}
+                      style={{ width: '7rem', padding: '0.3rem', borderRadius: 6 }}
+                    />
+                  </label>
+                ))}
+                <button
+                  className="btn btn--sm btn--primary"
+                  onClick={async () => {
+                    const ok = await updateEconomyConfig(economyConfig);
+                    toast(ok ? 'Economy config saved' : 'Save failed', ok ? 'info' : 'error');
+                  }}
+                >
+                  Save economy config
+                </button>
+              </div>
+              <p className="tiny dim" style={{ marginTop: 'var(--sp-2)' }}>
+                These are the same tartan.game_constants rows spend_coins_for_revive/claim_video_reward/
+                claim_article_reward already read directly — changes apply to the next call, not retroactively.
+              </p>
+            </Panel>
+          )}
         </div>
       </div>
     </>
