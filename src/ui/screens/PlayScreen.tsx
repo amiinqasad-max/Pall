@@ -17,6 +17,8 @@ import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { analytics } from '@/systems/analytics';
 import { submitRun } from '@/services/leaderboard';
+import { REVIVE_COST_COINS, spendCoinsForRevive } from '@/services/championship';
+import { championshipSessionId, useChampionship } from '@/state/championship';
 import { dailyChallenge } from '@/data/missions';
 import { levelFromXp } from '@/data/progression';
 import { storage } from '@/systems/storage';
@@ -28,6 +30,15 @@ import { dayKey } from '@/core/time';
 import type { RunResult } from '@/types';
 
 type Phase = 'loading' | 'playing' | 'paused' | 'offer' | 'results';
+
+/** Which screen sent the player here decides which mode this run plays in.
+ *  Mirrors the existing `daily` inference below — no separate nav param. */
+function championshipPhaseFromNav(): 'qualifying' | 'final' | undefined {
+  const previous = useUi.getState().previous;
+  if (previous === 'championship') return 'qualifying';
+  if (previous === 'championshipFinal') return 'final';
+  return undefined;
+}
 
 /**
  * The engine is a lazy chunk. Phaser is ~320KB gzipped — a third of the whole
@@ -56,6 +67,9 @@ export function PlayScreen() {
   const [coinAdsLeft, setCoinAdsLeft] = useState(REWARDED_DAILY_CAP);
   const [coinClaimed, setCoinClaimed] = useState(false);
   const [doubled, setDoubled] = useState(false);
+  const [reviving, setReviving] = useState(false);
+  const [championshipResult, setChampionshipResult] = useState<string | null>(null);
+  const coins = useStore((s) => s.save.wallet.coins);
 
   // The loadout is frozen for the whole run: changing a skin mid-run from
   // another tab must not reach into the live scene.
@@ -64,6 +78,7 @@ export function PlayScreen() {
     trailId: save.equipped.trail,
     environmentId: save.environment,
     daily: useUi.getState().previous === 'daily',
+    championshipPhase: championshipPhaseFromNav(),
     seed: undefined as number | undefined,
   });
 
@@ -78,8 +93,18 @@ export function PlayScreen() {
     const tier = requested === 'auto' ? device.tier : requested;
     const quality = qualityFor(tier);
 
-    const isDaily = loadout.current.daily && !save.daily.completed;
+    // The Championship and the (unrelated) mission-style daily challenge
+    // never overlap — a run is one or the other, never both.
+    const championshipPhase = loadout.current.championshipPhase;
+    const isDaily = !championshipPhase && loadout.current.daily && !save.daily.completed;
     const challenge = dailyChallenge(dayKey());
+    const championshipChallenge = useChampionship.getState().challenge;
+    const championshipSeed =
+      championshipPhase === 'qualifying'
+        ? championshipChallenge?.qualificationTrackSeed
+        : championshipPhase === 'final'
+          ? championshipChallenge?.finalTrackSeed
+          : undefined;
 
     void (async () => {
       const mod = await import('@/game/index');
@@ -95,12 +120,13 @@ export function PlayScreen() {
         tier,
         resolutionCap: quality.resolutionCap,
         daily: isDaily,
-        seed: isDaily ? challenge.seed : undefined,
+        seed: championshipPhase ? championshipSeed : isDaily ? challenge.seed : undefined,
+        championshipPhase,
         reducedMotion: save.settings.reducedMotion || device.reducedMotion,
       });
 
       setPhase('playing');
-      analytics.track('run_started', { daily: isDaily, tier, skin: loadout.current.skinId });
+      analytics.track('run_started', { daily: isDaily, championshipPhase, tier, skin: loadout.current.skinId });
     })();
 
     return () => {
@@ -144,6 +170,11 @@ export function PlayScreen() {
     });
 
     const offFinished = gameEvents.on('finished', ({ result }) => {
+      // A Championship run still counts as "playing the game" for normal
+      // progression (XP, missions, stats) — completeRun runs unconditionally.
+      // The score that actually matters for qualification/prizes is reported
+      // separately below, through the Championship's own server-authoritative
+      // submission path, never through this local/free-leaderboard one.
       const outcome = completeRun(result);
       setSummary(outcome);
       setPhase('results');
@@ -157,6 +188,13 @@ export function PlayScreen() {
       } else {
         const level = levelFromXp(useStore.getState().save.player.totalXp).level;
         void submitRun(result, useStore.getState().save.player.username, level);
+      }
+
+      const championshipPhase = loadout.current.championshipPhase;
+      if (championshipPhase === 'qualifying') {
+        void useChampionship.getState().reportQualificationRun(result).then(setChampionshipResult);
+      } else if (championshipPhase === 'final') {
+        void useChampionship.getState().reportFinalRun(result).then(setChampionshipResult);
       }
 
       if (outcome.newRecord) {
@@ -210,6 +248,24 @@ export function PlayScreen() {
   const declineContinue = (): void => {
     setOffer(null);
     engine.current?.finishGame();
+  };
+
+  // Coin-priced revive. Never reachable during a Championship final: `die()`
+  // in RunScene sets `canContinue = false` there, so the offer phase this
+  // button lives in is never entered in the first place — see RunScene.die().
+  const takeRevive = async (): Promise<void> => {
+    if (busy || reviving) return;
+    setReviving(true);
+    const newBalance = await spendCoinsForRevive(championshipSessionId());
+    setReviving(false);
+    if (newBalance == null) {
+      toast('Not enough coins', 'error');
+      return;
+    }
+    useStore.getState().applyServerCoinBalance(newBalance);
+    audio.play('boost');
+    haptics.fire('success');
+    engine.current?.continueGame();
   };
 
   const claimCoinAd = async (): Promise<void> => {
@@ -342,6 +398,17 @@ export function PlayScreen() {
               <Button variant="amber" size="lg" block disabled={busy} onClick={() => void takeContinue()}>
                 {busy ? 'Loading…' : '▶ Watch ad to continue'}
               </Button>
+              {/* Normal-game monetization only — this offer phase is never
+                  entered at all during a Championship final, so there is no
+                  separate check needed here to keep it out of that mode. */}
+              <Button
+                variant="default"
+                block
+                disabled={reviving || coins < REVIVE_COST_COINS}
+                onClick={() => void takeRevive()}
+              >
+                {reviving ? 'Reviving…' : `🪙 Revive for ${REVIVE_COST_COINS} coins`}
+              </Button>
               <Button variant="ghost" block onClick={declineContinue}>
                 End run
               </Button>
@@ -358,11 +425,14 @@ export function PlayScreen() {
           coinClaimed={coinClaimed}
           busy={busy}
           reducedMotion={save.settings.reducedMotion}
+          championshipPhase={loadout.current.championshipPhase}
+          championshipResult={championshipResult}
           onClaimCoins={() => void claimCoinAd()}
           onDouble={() => void claimDouble()}
           onRestart={() => void restart()}
           onHome={exit}
           onDaily={() => go('daily')}
+          onChampionship={() => go(loadout.current.championshipPhase === 'final' ? 'championshipFinal' : 'championship')}
         />
       )}
     </div>

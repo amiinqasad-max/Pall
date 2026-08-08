@@ -6,6 +6,7 @@ import { haptics } from '@/systems/haptics';
 import { analytics } from '@/systems/analytics';
 import { storage } from '@/systems/storage';
 import { isBackendConfigured } from '@/services/supabase';
+import { isStaff } from '@/services/admin';
 import { Button, IconButton, Panel, Sheet } from '@/ui/components/primitives';
 import type { PerfTier } from '@/types';
 
@@ -27,6 +28,11 @@ export function SettingsScreen() {
   const save = useStore((s) => s.save);
   const [confirmReset, setConfirmReset] = useState(false);
   const [driver, setDriver] = useState<string>('');
+  const [staff, setStaff] = useState(false);
+
+  useEffect(() => {
+    void isStaff().then(setStaff);
+  }, []);
 
   useEffect(() => {
     void storage.driver().then(setDriver);
@@ -149,6 +155,12 @@ export function SettingsScreen() {
               All artwork and audio in this game is generated procedurally at runtime.
             </p>
           </Panel>
+
+          {staff && (
+            <Button variant="ghost" block onClick={() => go('admin')}>
+              Championship admin
+            </Button>
+          )}
 
           <Button variant="danger" block onClick={() => setConfirmReset(true)}>
             Reset all progress

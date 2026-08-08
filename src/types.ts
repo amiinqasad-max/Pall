@@ -10,7 +10,10 @@ export type ScreenId =
   | 'leaderboard'
   | 'settings'
   | 'missions'
-  | 'daily';
+  | 'daily'
+  | 'championship'
+  | 'championshipFinal'
+  | 'admin';
 
 export type CosmeticKind = 'skin' | 'trail';
 
@@ -140,6 +143,63 @@ export interface LeaderboardEntry {
 export type LeaderboardScope = 'global' | 'daily' | 'weekly';
 
 export type PerfTier = 'ultraLow' | 'low' | 'medium' | 'high';
+
+// --- Championship ---------------------------------------------------------
+//
+// A separate system from the mission-style `DailyChallenge` above (see
+// data/missions.ts) — that one is a fixed-stat mission with coin/XP rewards.
+// This is the percentile-qualified, free-entry cash Championship. The two
+// are deliberately kept apart in code even though the on-screen copy for
+// this one says "Daily Championship".
+
+export type ChallengeStatus = 'scheduled' | 'active' | 'ended' | 'paused' | 'cancelled';
+export type QualificationStatus = 'not_qualified' | 'qualified' | 'disqualified';
+export type AntiCheatStatus = 'clean' | 'flagged' | 'disqualified';
+export type PayoutVerificationStatus = 'pending_verification' | 'verified' | 'rejected';
+export type PayoutStatus = 'pending' | 'approved' | 'paid' | 'cancelled';
+
+/** One calendar day's Championship, as the client reads it — the immutable
+ *  snapshot fields are null until the challenge has actually started. */
+export interface ChampionshipChallenge {
+  id: string;
+  challengeDate: string;
+  status: ChallengeStatus;
+  startTime: string;
+  endTime: string;
+  qualificationTrackSeed: number;
+  finalTrackSeed: number;
+  qualificationTarget: number | null;
+  prizePoolCents: number | null;
+  winnerCount: number | null;
+  maxFinalAttempts: number | null;
+}
+
+/** The signed-in player's own state within a challenge. */
+export interface ChampionshipParticipant {
+  qualificationStatus: QualificationStatus;
+  qualificationScore: number;
+  qualificationTimestamp: string | null;
+  finalAttemptsUsed: number;
+  finalScore: number;
+  finalRank: number | null;
+  antiCheatStatus: AntiCheatStatus;
+}
+
+export interface ChampionshipLeaderboardEntry {
+  rank: number;
+  userId: string;
+  username: string;
+  finalScore: number;
+  completedAt: string;
+  isSelf?: boolean;
+}
+
+export interface CoinPackage {
+  id: string;
+  name: string;
+  coins: number;
+  priceUsdCents: number;
+}
 
 export interface Settings {
   musicVolume: number;

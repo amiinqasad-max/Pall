@@ -6,16 +6,28 @@
  * who suspects pay-to-win stops trusting the leaderboard.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SKINS, TRAILS, evaluateUnlock } from '@/data/cosmetics';
 import { useCoins, useLevel, useStore } from '@/state/store';
 import { useUi } from '@/state/ui';
 import { AD_REWARDS, ads } from '@/systems/ads';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
+import { fetchCoinPackages, recordPurchaseAttempt } from '@/services/championship';
 import { Button, CoinChip, IconButton, Sheet, Tabs } from '@/ui/components/primitives';
 import { num } from '@/core/format';
-import type { Cosmetic } from '@/types';
+import type { Cosmetic, CoinPackage } from '@/types';
+
+/**
+ * No real payment processor is wired into this build — buying a package
+ * records a real, auditable purchase_records row (see
+ * supabase/migrations/0002_championship.sql) but coins are only credited
+ * once a staff member verifies it through admin_verify_and_credit_purchase.
+ * The UI says so plainly rather than pretending a purchase completed —
+ * showing "success" for money that was never actually collected would be
+ * exactly the "fake purchase confirmation" the brief says to prevent.
+ */
+const PAYMENTS_LIVE = false;
 
 export function StoreScreen() {
   const go = useUi((s) => s.go);
@@ -28,11 +40,34 @@ export function StoreScreen() {
   const equip = useStore((s) => s.equip);
   const earnCoins = useStore((s) => s.earnCoins);
 
-  const [tab, setTab] = useState<'skin' | 'trail'>('skin');
+  const [tab, setTab] = useState<'skin' | 'trail' | 'coins'>('skin');
   const [selected, setSelected] = useState<Cosmetic | null>(null);
   const [busy, setBusy] = useState(false);
+  const [packages, setPackages] = useState<CoinPackage[]>([]);
+  const [purchasing, setPurchasing] = useState<string | null>(null);
 
-  const items: Cosmetic[] = tab === 'skin' ? SKINS : TRAILS;
+  const items: Cosmetic[] = tab === 'skin' ? SKINS : tab === 'trail' ? TRAILS : [];
+
+  useEffect(() => {
+    if (tab === 'coins' && packages.length === 0) {
+      void fetchCoinPackages().then(setPackages);
+    }
+  }, [tab, packages.length]);
+
+  const buyPackage = async (pkg: CoinPackage): Promise<void> => {
+    if (purchasing) return;
+    setPurchasing(pkg.id);
+    // A per-attempt token; a real payment SDK would hand back a signed
+    // receipt here instead. See PAYMENTS_LIVE above.
+    const token = `${pkg.id}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+    const purchaseId = await recordPurchaseAttempt(pkg.id, 'web', token);
+    setPurchasing(null);
+    if (!purchaseId) {
+      toast('Could not start that purchase', 'error');
+      return;
+    }
+    toast('Purchase recorded — pending verification', 'info', '🧾');
+  };
 
   const onBuy = (cosmetic: Cosmetic): void => {
     const result = purchase(cosmetic.id);
@@ -76,11 +111,47 @@ export function StoreScreen() {
           tabs={[
             { id: 'skin', label: 'Ball skins' },
             { id: 'trail', label: 'Trails' },
+            { id: 'coins', label: 'Coins' },
           ]}
           value={tab}
           onChange={setTab}
         />
 
+        {tab === 'coins' && (
+          <>
+            {!PAYMENTS_LIVE && (
+              <div className="panel panel--amber center" style={{ marginBottom: 'var(--sp-3)' }}>
+                <p className="tiny" style={{ margin: 0 }}>
+                  Payments aren’t connected in this build yet — buying a package records the request for review
+                  rather than charging you or granting coins immediately.
+                </p>
+              </div>
+            )}
+            <div className="grid-2">
+              {packages.map((pkg) => (
+                <button
+                  key={pkg.id}
+                  className="cosmetic"
+                  disabled={purchasing === pkg.id}
+                  onClick={() => void buyPackage(pkg)}
+                >
+                  <div className="cosmetic__name">🪙 {num(pkg.coins)}</div>
+                  <div className="cosmetic__meta">{pkg.name}</div>
+                  <div className="strong" style={{ marginTop: 'var(--sp-2)' }}>
+                    {purchasing === pkg.id ? 'Requesting…' : `$${(pkg.priceUsdCents / 100).toFixed(2)}`}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="tiny dim center" style={{ marginTop: 'var(--sp-4)' }}>
+              Coins are a virtual in-game currency with no cash value. Coins cannot be withdrawn, exchanged, or
+              converted into real money.
+            </p>
+          </>
+        )}
+
+        {tab !== 'coins' && (
+        <>
         <div className="grid-2">
           {items.map((cosmetic) => {
             const owned = unlocks.includes(cosmetic.id);
@@ -136,6 +207,8 @@ export function StoreScreen() {
         <p className="tiny dim center" style={{ marginTop: 'var(--sp-4)' }}>
           Every item is cosmetic. Nothing sold here changes speed, control or difficulty.
         </p>
+        </>
+        )}
       </div>
 
       {selected && (

@@ -92,6 +92,7 @@ interface StoreState {
   setCountry(code: string | null): void;
   setOnboarded(): void;
   markSynced(userId: string | null): void;
+  applyServerCoinBalance(coins: number): void;
   applyCloudSave(remote: SaveData): void;
   resetProgress(): Promise<void>;
 }
@@ -647,6 +648,25 @@ export const useStore = create<StoreState>((set, get) => ({
     };
     set({ save: next });
     persistSave(next);
+  },
+
+  /**
+   * Reflects a balance the server just told us is authoritative — a coin
+   * purchase credit or a Championship revive spend, both of which update
+   * `profiles.coins` directly server-side. Marking the save dirty means the
+   * next cloud push carries this same number forward rather than a stale
+   * local one racing it; since the server is already ahead, that push is a
+   * harmless no-op, not a real conflict.
+   */
+  applyServerCoinBalance(coins) {
+    const save = get().save;
+    const next: SaveData = {
+      ...save,
+      wallet: { ...save.wallet, coins },
+      cloud: { ...save.cloud, dirty: true },
+    };
+    set({ save: next });
+    persistSave(next, true);
   },
 
   /**

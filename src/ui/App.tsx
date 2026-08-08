@@ -25,6 +25,9 @@ import { LeaderboardScreen } from '@/ui/screens/LeaderboardScreen';
 import { SettingsScreen } from '@/ui/screens/SettingsScreen';
 import { MissionsScreen } from '@/ui/screens/MissionsScreen';
 import { DailyScreen } from '@/ui/screens/DailyScreen';
+import { ChampionshipScreen } from '@/ui/screens/ChampionshipScreen';
+import { ChampionshipFinalScreen } from '@/ui/screens/ChampionshipFinalScreen';
+import { AdminChallengeScreen } from '@/ui/screens/AdminChallengeScreen';
 import { Toasts } from '@/ui/components/Toasts';
 import { AdOverlay } from '@/ui/components/AdOverlay';
 import { NavBar } from '@/ui/components/NavBar';
@@ -179,6 +182,9 @@ export function App() {
         {screen === 'profile' && <ProfileScreen />}
         {screen === 'settings' && <SettingsScreen />}
         {screen === 'daily' && <DailyScreen />}
+        {screen === 'championship' && <ChampionshipScreen />}
+        {screen === 'championshipFinal' && <ChampionshipFinalScreen />}
+        {screen === 'admin' && <AdminChallengeScreen />}
       </main>
 
       {NAV_SCREENS.includes(screen) && <NavBar />}

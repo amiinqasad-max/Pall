@@ -54,6 +54,14 @@ export interface RunConfig {
   /** Fixed seed for the daily challenge; omitted for a normal run. */
   seed?: number;
   reducedMotion: boolean;
+  /**
+   * Set when this run counts toward the Championship. The caller (PlayScreen)
+   * is responsible for passing the matching challenge-wide `seed` alongside
+   * this so every participant faces the identical track; `championshipPhase`
+   * itself is what `die()` reads to structurally guarantee "no paid
+   * advantages in the final" (see below). Omitted entirely for a normal run.
+   */
+  championshipPhase?: 'qualifying' | 'final';
 }
 
 type RunPhase = 'idle' | 'countdown' | 'running' | 'dying' | 'dead' | 'paused';
@@ -934,7 +942,11 @@ export class RunScene extends Phaser.Scene {
     }
     this.trailEmitter?.stop();
 
-    const canContinue = !this.continued && this.runTime > 8;
+    // Championship final: no continue exists here at all, paid or ad-based —
+    // not hidden in the UI, structurally absent from this code path. This is
+    // the one line that makes "no paid advantages in the final" true rather
+    // than merely intended.
+    const canContinue = this.config.championshipPhase !== 'final' && !this.continued && this.runTime > 8;
     analytics.track('run_death', {
       cause,
       distance: Math.round(this.distance),

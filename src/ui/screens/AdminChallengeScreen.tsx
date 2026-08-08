@@ -1,0 +1,363 @@
+/**
+ * Minimal Championship admin screen.
+ *
+ * Deliberately plain — per the resolved scope, this pass ships real,
+ * staff-gated database functions for every admin capability (see
+ * services/admin.ts and the RPCs in supabase/migrations/0002_championship.sql)
+ * plus one lightweight screen to drive them from. A polished dashboard is
+ * future work; nothing here blocks building one later, since all the actual
+ * authority lives in the RPCs, not in this component.
+ */
+
+import { useEffect, useState } from 'react';
+import { useUi } from '@/state/ui';
+import {
+  cancelChallenge,
+  createChallenge,
+  endChallenge,
+  fetchChallengeConfig,
+  fetchChallengeMonitoring,
+  fetchPayouts,
+  fetchRecentChallenges,
+  isStaff,
+  markPayoutApproved,
+  markPayoutPaid,
+  markPayoutVerified,
+  pauseChallenge,
+  resumeChallenge,
+  startChallenge,
+  updateChallengeConfig,
+  updateRegionSetting,
+  type AdminChallengeConfig,
+  type AdminChallengeRow,
+  type AdminPayoutRow,
+  type ChallengeMonitoring,
+} from '@/services/admin';
+import { IconButton, Panel } from '@/ui/components/primitives';
+import { num } from '@/core/format';
+
+export function AdminChallengeScreen() {
+  const go = useUi((s) => s.go);
+  const toast = useUi((s) => s.toast);
+  const [authorized, setAuthorized] = useState<'checking' | 'yes' | 'no'>('checking');
+  const [challenges, setChallenges] = useState<AdminChallengeRow[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [monitoring, setMonitoring] = useState<ChallengeMonitoring | null>(null);
+  const [config, setConfig] = useState<AdminChallengeConfig | null>(null);
+  const [payouts, setPayouts] = useState<AdminPayoutRow[]>([]);
+  const [payoutRefs, setPayoutRefs] = useState<Record<string, string>>({});
+  const [newDate, setNewDate] = useState('');
+  const [country, setCountry] = useState('');
+  const [regionEnabled, setRegionEnabled] = useState(false);
+
+  useEffect(() => {
+    void isStaff().then((ok) => setAuthorized(ok ? 'yes' : 'no'));
+  }, []);
+
+  const reloadChallenges = async (): Promise<void> => {
+    setChallenges(await fetchRecentChallenges());
+  };
+
+  useEffect(() => {
+    if (authorized !== 'yes') return;
+    void reloadChallenges();
+    void fetchChallengeConfig().then(setConfig);
+  }, [authorized]);
+
+  const reloadPayouts = async (challengeId: string): Promise<void> => {
+    setPayouts(await fetchPayouts(challengeId));
+  };
+
+  useEffect(() => {
+    if (!selected) return;
+    void fetchChallengeMonitoring(selected).then(setMonitoring);
+    void reloadPayouts(selected);
+  }, [selected]);
+
+  const runLifecycle = async (
+    label: string,
+    fn: (id: string) => Promise<boolean>,
+  ): Promise<void> => {
+    if (!selected) return;
+    const ok = await fn(selected);
+    toast(ok ? `${label} succeeded` : `${label} failed`, ok ? 'info' : 'error');
+    void reloadChallenges();
+    void fetchChallengeMonitoring(selected).then(setMonitoring);
+  };
+
+  if (authorized === 'checking') {
+    return (
+      <div className="screen__body">
+        <p className="small muted center">Checking access…</p>
+      </div>
+    );
+  }
+
+  if (authorized === 'no') {
+    return (
+      <>
+        <header className="topbar">
+          <IconButton icon="←" label="Back" onClick={() => go('home')} />
+          <h1 className="topbar__title">Admin</h1>
+        </header>
+        <div className="screen__body">
+          <Panel>
+            <p className="small center" style={{ margin: 0 }}>
+              This account isn’t staff. Grant access with
+              `insert into tartan.staff_roles (user_id, role) values (…, 'admin')`.
+            </p>
+          </Panel>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <header className="topbar">
+        <IconButton icon="←" label="Back" onClick={() => go('home')} />
+        <h1 className="topbar__title">Championship admin</h1>
+      </header>
+
+      <div className="screen__body">
+        <div className="stack">
+          <Panel title="Create challenge">
+            <div className="row" style={{ gap: 'var(--sp-2)' }}>
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                style={{ flex: 1, padding: '0.5rem', borderRadius: 8 }}
+              />
+              <button
+                className="btn btn--sm btn--primary"
+                onClick={async () => {
+                  if (!newDate) return;
+                  const start = new Date(`${newDate}T00:00:00Z`).toISOString();
+                  const end = new Date(`${newDate}T23:59:59Z`).toISOString();
+                  const id = await createChallenge(newDate, start, end);
+                  toast(id ? 'Challenge created (00:00–23:59 UTC)' : 'Failed to create challenge', id ? 'info' : 'error');
+                  void reloadChallenges();
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </Panel>
+
+          <Panel title="Recent challenges">
+            <div className="stack stack--tight">
+              {challenges.map((c) => (
+                <button
+                  key={c.id}
+                  className={`listrow ${selected === c.id ? 'listrow--self' : ''}`}
+                  onClick={() => setSelected(c.id)}
+                  style={{ width: '100%', textAlign: 'left' }}
+                >
+                  <div className="listrow__main">
+                    <div className="listrow__name">{c.challengeDate}</div>
+                    <div className="tiny dim">{c.status}</div>
+                  </div>
+                </button>
+              ))}
+              {challenges.length === 0 && <p className="tiny dim center">No challenges yet.</p>}
+            </div>
+          </Panel>
+
+          {selected && (
+            <Panel title="Lifecycle">
+              <div className="row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+                <button className="btn btn--sm" onClick={() => void runLifecycle('Start', startChallenge)}>
+                  Start
+                </button>
+                <button className="btn btn--sm" onClick={() => void runLifecycle('Pause', pauseChallenge)}>
+                  Pause
+                </button>
+                <button className="btn btn--sm" onClick={() => void runLifecycle('Resume', resumeChallenge)}>
+                  Resume
+                </button>
+                <button className="btn btn--sm btn--amber" onClick={() => void runLifecycle('End', endChallenge)}>
+                  End
+                </button>
+                <button className="btn btn--sm btn--danger" onClick={() => void runLifecycle('Cancel', cancelChallenge)}>
+                  Cancel
+                </button>
+              </div>
+            </Panel>
+          )}
+
+          {monitoring && (
+            <Panel title="Monitoring">
+              <div className="statgrid">
+                {(
+                  [
+                    ['Participants', monitoring.totalParticipants],
+                    ['Qualified', monitoring.qualified],
+                    ['Finalists', monitoring.finalists],
+                    ['Flagged', monitoring.flagged],
+                    ['Disqualified', monitoring.disqualified],
+                    ['Winners', monitoring.winners],
+                    ['Pending payouts', monitoring.pendingPayouts],
+                    ['Paid', monitoring.completedPayouts],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <div className="statgrid__value">{value}</div>
+                    <div className="statgrid__label">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {selected && payouts.length > 0 && (
+            <Panel title="Payouts">
+              <p className="tiny dim" style={{ marginTop: 0 }}>
+                Pending Verification → Verified → Approved → Paid. "Paid" only records that money moved outside this
+                system — it never moves anything itself, and requires a reference.
+              </p>
+              <div className="stack stack--tight">
+                {payouts.map((p) => (
+                  <div key={p.id} className="listrow" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div className="row row--between small">
+                      <span className="strong">
+                        #{p.rank} · {num(p.finalScore)} pts · ${(p.prizeAmountCents / 100).toFixed(2)}
+                      </span>
+                      <span className="tiny dim">
+                        {p.verificationStatus} / {p.payoutStatus}
+                      </span>
+                    </div>
+                    <div className="row" style={{ gap: 'var(--sp-2)', marginTop: 6, flexWrap: 'wrap' }}>
+                      {p.verificationStatus === 'pending_verification' && (
+                        <button
+                          className="btn btn--sm"
+                          onClick={async () => {
+                            const ok = await markPayoutVerified(p.id);
+                            toast(ok ? 'Verified' : 'Failed', ok ? 'info' : 'error');
+                            void reloadPayouts(selected);
+                          }}
+                        >
+                          Mark verified
+                        </button>
+                      )}
+                      {p.verificationStatus === 'verified' && p.payoutStatus === 'pending' && (
+                        <button
+                          className="btn btn--sm"
+                          onClick={async () => {
+                            const ok = await markPayoutApproved(p.id);
+                            toast(ok ? 'Approved' : 'Failed', ok ? 'info' : 'error');
+                            void reloadPayouts(selected);
+                          }}
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {p.payoutStatus === 'approved' && (
+                        <>
+                          <input
+                            placeholder="External reference"
+                            value={payoutRefs[p.id] ?? ''}
+                            onChange={(e) => setPayoutRefs({ ...payoutRefs, [p.id]: e.target.value })}
+                            style={{ flex: 1, minWidth: '8rem', padding: '0.3rem', borderRadius: 6 }}
+                          />
+                          <button
+                            className="btn btn--sm btn--primary"
+                            onClick={async () => {
+                              const ref = payoutRefs[p.id] ?? '';
+                              const ok = await markPayoutPaid(p.id, ref);
+                              toast(ok ? 'Marked paid' : 'Reference required', ok ? 'info' : 'error');
+                              void reloadPayouts(selected);
+                            }}
+                          >
+                            Mark paid
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {config && (
+            <Panel title="Qualification & prize config">
+              <div className="stack stack--tight">
+                {(
+                  [
+                    ['Reference percentile', 'referencePercentile'],
+                    ['Qualification multiplier', 'qualificationMultiplier'],
+                    ['Minimum target', 'minimumTarget'],
+                    ['Maximum target', 'maximumTarget'],
+                    ['Fallback target', 'fallbackTarget'],
+                    ['Minimum sample size', 'minimumSampleSize'],
+                    ['Prize pool (cents)', 'defaultPrizePoolCents'],
+                    ['Winner count', 'defaultWinnerCount'],
+                    ['Max final attempts', 'defaultMaxFinalAttempts'],
+                  ] as [string, keyof AdminChallengeConfig][]
+                ).map(([label, key]) => (
+                  <label key={key} className="row row--between small">
+                    <span>{label}</span>
+                    <input
+                      type="number"
+                      value={config[key]}
+                      onChange={(e) => setConfig({ ...config, [key]: Number(e.target.value) })}
+                      style={{ width: '7rem', padding: '0.3rem', borderRadius: 6 }}
+                    />
+                  </label>
+                ))}
+                <button
+                  className="btn btn--sm btn--primary"
+                  onClick={async () => {
+                    const ok = await updateChallengeConfig(config);
+                    toast(ok ? 'Config saved' : 'Save failed', ok ? 'info' : 'error');
+                  }}
+                >
+                  Save config
+                </button>
+              </div>
+              <p className="tiny dim" style={{ marginTop: 'var(--sp-2)' }}>
+                Only affects challenges created after this save — an active or ended challenge already froze its own
+                copy of these numbers.
+              </p>
+            </Panel>
+          )}
+
+          <Panel title="Region cash-prize gating">
+            <div className="row" style={{ gap: 'var(--sp-2)' }}>
+              <input
+                placeholder="Country code, e.g. US"
+                value={country}
+                onChange={(e) => setCountry(e.target.value.toUpperCase())}
+                style={{ flex: 1, padding: '0.5rem', borderRadius: 8 }}
+                maxLength={2}
+              />
+              <label className="row small">
+                <input
+                  type="checkbox"
+                  checked={regionEnabled}
+                  onChange={(e) => setRegionEnabled(e.target.checked)}
+                />
+                Enabled
+              </label>
+              <button
+                className="btn btn--sm btn--primary"
+                onClick={async () => {
+                  if (country.length !== 2) return;
+                  const ok = await updateRegionSetting(country, regionEnabled, null);
+                  toast(ok ? `${country} updated` : 'Update failed', ok ? 'info' : 'error');
+                }}
+              >
+                Save
+              </button>
+            </div>
+            <p className="tiny dim" style={{ marginTop: 'var(--sp-2)' }}>
+              Fails closed: any country with no row here shows no cash prizes. Verify the applicable law and app-store
+              policy for a region before enabling it.
+            </p>
+          </Panel>
+        </div>
+      </div>
+    </>
+  );
+}
