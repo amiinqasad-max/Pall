@@ -43,6 +43,22 @@ const CLAIM_MESSAGES: Record<CoinRewardClaimResult, string> = {
  *  supabase/migrations/0005_coins_store_v2.sql's header. */
 const WHATSAPP_NUMBER = '251915285572';
 
+/**
+ * The 4 packages exactly as configured server-side (tartan.coin_packages,
+ * see supabase/migrations/0005_coins_store_v2.sql) — kept here as a fallback
+ * so Buy Coins never renders empty if the backend is briefly unreachable or
+ * hasn't been provisioned yet. The live fetch below is still tried first and
+ * used whenever it returns anything, so an admin price change still takes
+ * effect the moment the backend is reachable; this is only a floor, not a
+ * replacement for the real data.
+ */
+const DEFAULT_PACKAGES: CoinPackage[] = [
+  { id: 'coins_500', name: '500 Coins', coins: 500, priceBirr: 50 },
+  { id: 'coins_1000', name: '1,000 Coins', coins: 1000, priceBirr: 80 },
+  { id: 'coins_2000', name: '2,000 Coins', coins: 2000, priceBirr: 150 },
+  { id: 'coins_10000', name: '10,000 Coins', coins: 10000, priceBirr: 500 },
+];
+
 function buildOrderMessage(pkg: CoinPackage, orderId: string): string {
   return (
     `TARTAN Coins order\n` +
@@ -79,14 +95,19 @@ export function StoreScreen() {
 
   useEffect(() => {
     if (tab !== 'coins') return;
-    if (packages.length === 0) void fetchCoinPackages().then(setPackages);
+    if (packages.length === 0) {
+      void fetchCoinPackages().then((fetched) => setPackages(fetched.length > 0 ? fetched : DEFAULT_PACKAGES));
+    }
     if (!articlesLoaded) void fetchActiveArticles().then((a) => { setArticles(a); setArticlesLoaded(true); });
     void refreshEconomy();
   }, [tab, packages.length, articlesLoaded, refreshEconomy]);
 
-  // Buying a package never credits coins itself — it records a real,
-  // auditable purchase_records row (so a staff member has something to
-  // approve against) and opens WhatsApp with the order pre-filled in.
+  // Buying a package never credits coins itself — it best-effort records a
+  // real, auditable purchase_records row (so a staff member has something to
+  // approve against) and opens WhatsApp with the order pre-filled in. The
+  // WhatsApp handoff must never be blocked by the backend being unreachable
+  // — if recording the order fails, a locally-generated reference goes in
+  // the message instead, so the player can always actually start an order.
   // Coins are only ever credited once staff verifies the payment and
   // approves the order from the admin panel's Coin Orders section.
   const buyPackage = async (pkg: CoinPackage): Promise<void> => {
@@ -95,13 +116,14 @@ export function StoreScreen() {
     const token = `${pkg.id}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
     const purchaseId = await recordPurchaseAttempt(pkg.id, 'whatsapp', token);
     setPurchasing(null);
-    if (!purchaseId) {
-      toast('Could not start that order', 'error');
-      return;
-    }
-    const message = buildOrderMessage(pkg, purchaseId);
+    const orderRef = purchaseId ?? `local-${token}`;
+    const message = buildOrderMessage(pkg, orderRef);
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-    toast('Order recorded — send the WhatsApp message to complete it', 'info', '🧾');
+    toast(
+      purchaseId ? 'Order recorded — send the WhatsApp message to complete it' : 'Opened WhatsApp — send the message to complete your order',
+      'info',
+      '🧾',
+    );
   };
 
   const onBuy = (cosmetic: Cosmetic): void => {
@@ -214,22 +236,22 @@ export function StoreScreen() {
                 itself — send the message, and a staff member credits your coins once your payment is confirmed.
               </p>
             </div>
-            <div className="grid-2">
-              {packages.map((pkg) => (
-                <button
-                  key={pkg.id}
-                  className="cosmetic"
-                  disabled={purchasing === pkg.id}
-                  onClick={() => void buyPackage(pkg)}
-                >
-                  <div className="cosmetic__name">🪙 {num(pkg.coins)}</div>
-                  <div className="cosmetic__meta">{pkg.name}</div>
-                  <div className="strong" style={{ marginTop: 'var(--sp-2)' }}>
-                    {purchasing === pkg.id ? 'Opening WhatsApp…' : `${num(pkg.priceBirr)} Birr`}
+
+            {packages.map((pkg) => (
+              <Panel key={pkg.id}>
+                <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="strong">🪙 {pkg.name}</div>
+                    <div className="small muted">{num(pkg.priceBirr)} Birr</div>
                   </div>
-                </button>
-              ))}
-            </div>
+                  <div className="strong numeric">🪙 {num(pkg.coins)}</div>
+                </div>
+                <Button variant="amber" block disabled={purchasing === pkg.id} onClick={() => void buyPackage(pkg)}>
+                  {purchasing === pkg.id ? 'Opening WhatsApp…' : 'BUY VIA WHATSAPP'}
+                </Button>
+              </Panel>
+            ))}
+
             <p className="tiny dim center" style={{ margin: 0 }}>
               Coins are a virtual in-game currency with no cash value. Coins cannot be withdrawn, exchanged, or
               converted into real money.
