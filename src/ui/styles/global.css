@@ -1913,6 +1913,23 @@ input {
   }
 }
 
+/*
+ * The ultraLow tier sheds every decorative idle animation in the menu chrome
+ * — card float, the play button's breathe/sheen, badge/nav-dot pulses, meter
+ * shine — the same way prefers-reduced-motion does above, but keyed off the
+ * resolved quality tier instead of the OS setting. A device can be genuinely
+ * too weak for this without the player having asked for reduced motion, and
+ * "menus consume almost no CPU while idle" is a performance requirement on
+ * that hardware, not an accessibility one. App.tsx writes this attribute.
+ */
+:root[data-perf-tier='ultraLow'] *,
+:root[data-perf-tier='ultraLow'] *::before,
+:root[data-perf-tier='ultraLow'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
 @media (min-width: 40rem) {
   .app {
     max-width: 30rem;

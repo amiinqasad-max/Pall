@@ -1,21 +1,73 @@
 /**
  * The store.
  *
- * Cosmetics only. There is no bundle, no gacha, no timer, and nothing here
+ * Cosmetics, plus the Coins tab: earn (limited gameplay rewards handled
+ * elsewhere in Missions, plus Read Article here) and buy. There is no
+ * bundle, no gacha, no timer on the cosmetics side, and nothing sold here
  * changes how the ball handles — the copy says so plainly, because a player
  * who suspects pay-to-win stops trusting the leaderboard.
+ *
+ * Buying a Coins package opens a pre-filled WhatsApp order (see
+ * supabase/migrations/0005_coins_store_v2.sql) — nothing here ever credits
+ * coins itself; a staff member verifies the payment and credits the order
+ * by hand through the same server-authoritative ledger every other coin
+ * source writes to.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SKINS, TRAILS, evaluateUnlock } from '@/data/cosmetics';
 import { useCoins, useLevel, useStore } from '@/state/store';
+import { useEconomy } from '@/state/economy';
 import { useUi } from '@/state/ui';
-import { AD_REWARDS, ads } from '@/systems/ads';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
-import { Button, CoinChip, IconButton, Sheet, Tabs } from '@/ui/components/primitives';
+import { fetchCoinPackages, recordPurchaseAttempt } from '@/services/championship';
+import { ARTICLE_MIN_READ_SECONDS, fetchActiveArticles } from '@/services/coinEconomy';
+import { Button, CoinChip, IconButton, Panel, Sheet, Tabs } from '@/ui/components/primitives';
+import { ArticleReaderSheet } from '@/ui/components/ArticleReaderSheet';
+import { CoinHistorySheet } from '@/ui/components/CoinHistorySheet';
 import { num } from '@/core/format';
-import type { Cosmetic } from '@/types';
+import type { Article, Cosmetic, CoinPackage, CoinRewardClaimResult } from '@/types';
+
+const CLAIM_MESSAGES: Record<CoinRewardClaimResult, string> = {
+  credited: 'Reward granted',
+  already_claimed: 'Already claimed',
+  too_early: 'Not quite yet',
+  daily_limit_reached: 'Today’s limit reached — come back tomorrow',
+  not_found: 'Reward not granted',
+  offline: 'Couldn’t reach the server — try again',
+  not_signed_in: 'Not signed in',
+};
+
+/** The one number in this file a real deployment must change — see
+ *  supabase/migrations/0005_coins_store_v2.sql's header. */
+const WHATSAPP_NUMBER = '251915285572';
+
+/**
+ * The 4 packages exactly as configured server-side (tartan.coin_packages,
+ * see supabase/migrations/0005_coins_store_v2.sql) — kept here as a fallback
+ * so Buy Coins never renders empty if the backend is briefly unreachable or
+ * hasn't been provisioned yet. The live fetch below is still tried first and
+ * used whenever it returns anything, so an admin price change still takes
+ * effect the moment the backend is reachable; this is only a floor, not a
+ * replacement for the real data.
+ */
+const DEFAULT_PACKAGES: CoinPackage[] = [
+  { id: 'coins_500', name: '500 Coins', coins: 500, priceBirr: 50 },
+  { id: 'coins_1000', name: '1,000 Coins', coins: 1000, priceBirr: 80 },
+  { id: 'coins_2000', name: '2,000 Coins', coins: 2000, priceBirr: 150 },
+  { id: 'coins_10000', name: '10,000 Coins', coins: 10000, priceBirr: 500 },
+];
+
+function buildOrderMessage(pkg: CoinPackage, orderId: string): string {
+  return (
+    `TARTAN Coins order\n` +
+    `Package: ${pkg.name}\n` +
+    `Coins: ${pkg.coins}\n` +
+    `Price: ${pkg.priceBirr} Birr\n` +
+    `Order ID: ${orderId}`
+  );
+}
 
 export function StoreScreen() {
   const go = useUi((s) => s.go);
@@ -26,13 +78,53 @@ export function StoreScreen() {
   const equipped = useStore((s) => s.save.equipped);
   const purchase = useStore((s) => s.purchase);
   const equip = useStore((s) => s.equip);
-  const earnCoins = useStore((s) => s.earnCoins);
 
-  const [tab, setTab] = useState<'skin' | 'trail'>('skin');
+  const economyStatus = useEconomy((s) => s.status);
+  const refreshEconomy = useEconomy((s) => s.refresh);
+
+  const [tab, setTab] = useState<'skin' | 'trail' | 'coins'>('skin');
   const [selected, setSelected] = useState<Cosmetic | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [packages, setPackages] = useState<CoinPackage[]>([]);
+  const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [articlesLoaded, setArticlesLoaded] = useState(false);
+  const [readingArticle, setReadingArticle] = useState<Article | null>(null);
 
-  const items: Cosmetic[] = tab === 'skin' ? SKINS : TRAILS;
+  const items: Cosmetic[] = tab === 'skin' ? SKINS : tab === 'trail' ? TRAILS : [];
+
+  useEffect(() => {
+    if (tab !== 'coins') return;
+    if (packages.length === 0) {
+      void fetchCoinPackages().then((fetched) => setPackages(fetched.length > 0 ? fetched : DEFAULT_PACKAGES));
+    }
+    if (!articlesLoaded) void fetchActiveArticles().then((a) => { setArticles(a); setArticlesLoaded(true); });
+    void refreshEconomy();
+  }, [tab, packages.length, articlesLoaded, refreshEconomy]);
+
+  // Buying a package never credits coins itself — it best-effort records a
+  // real, auditable purchase_records row (so a staff member has something to
+  // approve against) and opens WhatsApp with the order pre-filled in. The
+  // WhatsApp handoff must never be blocked by the backend being unreachable
+  // — if recording the order fails, a locally-generated reference goes in
+  // the message instead, so the player can always actually start an order.
+  // Coins are only ever credited once staff verifies the payment and
+  // approves the order from the admin panel's Coin Orders section.
+  const buyPackage = async (pkg: CoinPackage): Promise<void> => {
+    if (purchasing) return;
+    setPurchasing(pkg.id);
+    const token = `${pkg.id}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+    const purchaseId = await recordPurchaseAttempt(pkg.id, 'whatsapp', token);
+    setPurchasing(null);
+    const orderRef = purchaseId ?? `local-${token}`;
+    const message = buildOrderMessage(pkg, orderRef);
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    toast(
+      purchaseId ? 'Order recorded — send the WhatsApp message to complete it' : 'Opened WhatsApp — send the message to complete your order',
+      'info',
+      '🧾',
+    );
+  };
 
   const onBuy = (cosmetic: Cosmetic): void => {
     const result = purchase(cosmetic.id);
@@ -48,19 +140,19 @@ export function StoreScreen() {
     else if (result.error === 'needs_level') toast('Level requirement not met', 'error');
   };
 
-  const watchForCoins = async (): Promise<void> => {
-    if (busy) return;
-    setBusy(true);
-    const outcome = await ads.rewarded('reward_coins');
-    setBusy(false);
-    if (!outcome.completed) {
-      toast('Reward not granted', 'error');
-      return;
+  const readArticle = (): void => {
+    if (articles.length === 0) return;
+    setReadingArticle(articles[Math.floor(Math.random() * articles.length)]);
+  };
+
+  const onArticleResult = (result: string): void => {
+    if (result === 'credited') {
+      audio.play('coin');
+      haptics.fire('reward');
+      toast(`+${economyStatus?.articleRewardCoins ?? 30} coins`, 'reward', '🪙');
+    } else {
+      toast(CLAIM_MESSAGES[result as CoinRewardClaimResult] ?? 'Reward not granted', 'error');
     }
-    earnCoins('rewarded_ad', AD_REWARDS.reward_coins, 'Store bonus');
-    audio.play('coin');
-    haptics.fire('reward');
-    toast(`+${AD_REWARDS.reward_coins} coins`, 'reward', '🪙');
   };
 
   return (
@@ -76,11 +168,99 @@ export function StoreScreen() {
           tabs={[
             { id: 'skin', label: 'Ball skins' },
             { id: 'trail', label: 'Trails' },
+            { id: 'coins', label: 'Coins' },
           ]}
           value={tab}
           onChange={setTab}
         />
 
+        {tab === 'coins' && (
+          <div className="stack">
+            {/* COIN BALANCE */}
+            <Panel
+              title="🪙 YOUR COINS"
+              tone="amber"
+              action={
+                <Button variant="ghost" onClick={() => setShowHistory(true)}>
+                  History
+                </Button>
+              }
+            >
+              <div className="strong" style={{ fontSize: '1.6rem' }}>
+                {num(coins)}
+              </div>
+            </Panel>
+
+            {/* EARN COINS */}
+            <p className="tiny muted" style={{ margin: 0 }}>
+              EARN COINS
+            </p>
+
+            <Panel>
+              <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="strong">📖 Read Article</div>
+                  <div className="small muted">
+                    {Math.ceil(ARTICLE_MIN_READ_SECONDS / 60)} min read · Today:{' '}
+                    {economyStatus?.articleClaimsToday ?? 0}/{economyStatus?.articleRewardDailyLimit ?? 0}
+                  </div>
+                </div>
+                <div className="strong numeric">+{economyStatus?.articleRewardCoins ?? 30} 🪙</div>
+              </div>
+              <Button
+                variant="amber"
+                block
+                disabled={
+                  articlesLoaded && articles.length === 0
+                    ? true
+                    : economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
+                }
+                onClick={readArticle}
+              >
+                {articlesLoaded && articles.length === 0
+                  ? 'No articles available'
+                  : economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
+                    ? 'Daily limit reached'
+                    : 'READ ARTICLE'}
+              </Button>
+            </Panel>
+
+            {/* BUY COINS */}
+            <p className="tiny muted" style={{ margin: 0 }}>
+              BUY COINS
+            </p>
+
+            <div className="panel panel--amber center">
+              <p className="tiny" style={{ margin: 0 }}>
+                Buying a package opens WhatsApp with your order pre-filled in. It doesn’t charge you or grant coins by
+                itself — send the message, and a staff member credits your coins once your payment is confirmed.
+              </p>
+            </div>
+
+            {packages.map((pkg) => (
+              <Panel key={pkg.id}>
+                <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="strong">🪙 {pkg.name}</div>
+                    <div className="small muted">{num(pkg.priceBirr)} Birr</div>
+                  </div>
+                  <div className="strong numeric">🪙 {num(pkg.coins)}</div>
+                </div>
+                <Button variant="amber" block disabled={purchasing === pkg.id} onClick={() => void buyPackage(pkg)}>
+                  {purchasing === pkg.id ? 'Opening WhatsApp…' : 'BUY VIA WHATSAPP'}
+                </Button>
+              </Panel>
+            ))}
+
+            <p className="tiny dim center" style={{ margin: 0 }}>
+              Coins are a virtual in-game currency with no cash value. Coins cannot be withdrawn, exchanged, or
+              converted into real money.
+            </p>
+          </div>
+        )}
+
+        {tab !== 'coins' && (
+        <>
         <div className="grid-2">
           {items.map((cosmetic) => {
             const owned = unlocks.includes(cosmetic.id);
@@ -118,24 +298,12 @@ export function StoreScreen() {
           })}
         </div>
 
-        <div className="panel" style={{ marginTop: 'var(--sp-4)' }}>
-          <div className="row row--between" style={{ marginBottom: 'var(--sp-3)' }}>
-            <div style={{ minWidth: 0 }}>
-              <div className="strong">Need coins?</div>
-              <div className="small muted">
-                Coins come from rewarded ads, the daily challenge, and login rewards. Never from playing — so the
-                leaderboard stays about skill.
-              </div>
-            </div>
-          </div>
-          <Button variant="amber" block disabled={busy} onClick={() => void watchForCoins()}>
-            {busy ? 'Loading…' : `▶ Watch ad for ${AD_REWARDS.reward_coins} coins`}
-          </Button>
-        </div>
-
         <p className="tiny dim center" style={{ marginTop: 'var(--sp-4)' }}>
-          Every item is cosmetic. Nothing sold here changes speed, control or difficulty.
+          Every item is cosmetic. Nothing sold here changes speed, control or difficulty. Need coins? Head to the
+          Coins tab above — read an article or buy a pack.
         </p>
+        </>
+        )}
       </div>
 
       {selected && (
@@ -148,6 +316,18 @@ export function StoreScreen() {
             Close
           </Button>
         </Sheet>
+      )}
+
+      {showHistory && <CoinHistorySheet onClose={() => setShowHistory(false)} />}
+
+      {readingArticle && (
+        <ArticleReaderSheet
+          article={readingArticle}
+          minReadSeconds={ARTICLE_MIN_READ_SECONDS}
+          rewardCoins={economyStatus?.articleRewardCoins ?? 30}
+          onClose={() => setReadingArticle(null)}
+          onResult={onArticleResult}
+        />
       )}
     </>
   );

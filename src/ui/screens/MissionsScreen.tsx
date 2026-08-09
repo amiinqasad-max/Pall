@@ -5,6 +5,7 @@ import { formatCountdown, msUntilUtcMidnight, msUntilWeeklyReset } from '@/core/
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { Button, IconButton, Meter, Panel, Tabs } from '@/ui/components/primitives';
+import { ChampionshipHomeCard } from '@/ui/components/ChampionshipHomeCard';
 import { num } from '@/core/format';
 
 export function MissionsScreen() {
@@ -40,6 +41,14 @@ export function MissionsScreen() {
       </header>
 
       <div className="screen__body">
+        {/* This is the closest thing the app has to a "Games/Challenges"
+            section, so the Championship gets a second reachable entry point
+            here — the same card Home shows, not a separate screen or a new
+            nav concept. */}
+        <div style={{ marginBottom: 'var(--sp-3)' }}>
+          <ChampionshipHomeCard />
+        </div>
+
         <Tabs
           tabs={[
             { id: 'daily', label: 'Daily' },

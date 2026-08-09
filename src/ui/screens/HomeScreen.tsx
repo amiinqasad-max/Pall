@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useStore, useLevel, useCoins, useMissions } from '@/state/store';
 import { useUi } from '@/state/ui';
+import { useChampionship } from '@/state/championship';
 import { dailyChallenge } from '@/data/missions';
 import { badgeForLevel } from '@/data/progression';
 import { challengeProgressValue } from '@/state/store';
 import { formatCountdown, msUntilUtcMidnight } from '@/core/time';
 import { compact, num } from '@/core/format';
 import { Button, CoinChip, Meter, Panel } from '@/ui/components/primitives';
+import { ChampionshipHomeCard } from '@/ui/components/ChampionshipHomeCard';
 import { InstallPrompt } from '@/ui/components/InstallPrompt';
 
 export function HomeScreen() {
@@ -16,11 +18,16 @@ export function HomeScreen() {
   const coins = useCoins();
   const daily = useMissions('daily');
   const [resetIn, setResetIn] = useState(msUntilUtcMidnight());
+  const initChampionship = useChampionship((s) => s.init);
 
   useEffect(() => {
     const timer = setInterval(() => setResetIn(msUntilUtcMidnight()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    void initChampionship(save.player.country);
+  }, [initChampionship, save.player.country]);
 
   const challenge = dailyChallenge(save.daily.day);
   const challengeProgress = Math.min(1, save.daily.progress / challenge.target);
@@ -72,6 +79,14 @@ export function HomeScreen() {
           <button className="playbtn" onClick={() => go('play')}>
             PLAY
           </button>
+
+          {/* The Championship — distinct from the mission-style "Daily
+              challenge" card below. Always rendered: loading, error,
+              no-active-challenge, qualification, qualified, and ended/payout
+              are all real states inside this one card, not conditions on
+              whether to show it at all (see the component's own header for
+              why that used to make the whole feature unreachable). */}
+          <ChampionshipHomeCard />
 
           {/* Daily challenge: same target, same seed, everyone, every day. */}
           <Panel

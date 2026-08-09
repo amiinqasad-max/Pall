@@ -17,6 +17,7 @@
 import Phaser from 'phaser';
 import { createRng, hashString } from '@/core/rng';
 import { mixColor } from '@/game/render/projection';
+import { isLiteTier } from '@/systems/device';
 import type { Environment } from '@/data/progression';
 import type { PerfTier } from '@/types';
 
@@ -156,7 +157,7 @@ export class Backdrop {
       .setAlpha(0.32);
 
     // Floating motes. Purely atmospheric, so the low tier goes without.
-    if (this.tier !== 'low' && !this.reducedMotion) {
+    if (!isLiteTier(this.tier) && !this.reducedMotion) {
       this.motes = this.scene.add.particles(0, 0, 'particle', {
         x: { min: 0, max: width },
         y: { min: horizon - 60, max: height },

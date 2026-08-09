@@ -102,6 +102,33 @@ export function generateBallTexture(scene: Phaser.Scene, skin: BallSkin, key = '
   ctx.fillStyle = spec;
   ctx.fill();
 
+  // A tight, near-white fleck inside the main highlight — the second, smaller
+  // catch-light that reads as a genuinely glossy/wet surface rather than a
+  // matte one. Boot-time only: no runtime cost.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(c, c, r, 0, Math.PI * 2);
+  ctx.clip();
+  const fleck = ctx.createRadialGradient(c - r * 0.4, c - r * 0.48, 0, c - r * 0.4, c - r * 0.48, r * 0.14);
+  fleck.addColorStop(0, 'rgba(255,255,255,0.9)');
+  fleck.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = fleck;
+  ctx.fillRect(0, 0, size, size);
+  ctx.restore();
+
+  // Fresnel-style rim brightening: a thin bright ring right at the silhouette
+  // edge, where a real sphere scatters the most light back toward the eye.
+  // Kept subtle and full-perimeter (unlike the directional rim light above,
+  // which only lights the lower-right) so the ball reads as curved from any
+  // angle it happens to be lit from.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(c, c, r, 0, Math.PI * 2);
+  ctx.lineWidth = size * 0.035;
+  ctx.strokeStyle = hex(skin.palette.spec, 0.3);
+  ctx.stroke();
+  ctx.restore();
+
   commit(scene, key);
   return key;
 }
@@ -419,6 +446,28 @@ export function generateChevronTexture(scene: Phaser.Scene, key = 'chevron', siz
   return key;
 }
 
+/**
+ * Speed-feel streak: a thin horizontal gradient bar, additive-blended.
+ *
+ * Used by `systems/SpeedCue` for the peripheral "rushing past" lines that
+ * sell velocity through composition rather than through the simulation —
+ * one texture, tinted white and stretched/rotated per streak, so the whole
+ * effect costs nothing beyond the handful of pooled sprites that use it.
+ */
+export function generateStreakTexture(scene: Phaser.Scene, key = 'speedline'): string {
+  const width = 256;
+  const height = 16;
+  const { ctx } = makeCanvas(scene, key, width, height);
+  const g = ctx.createLinearGradient(0, 0, width, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.95)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, height * 0.35, width, height * 0.3);
+  commit(scene, key);
+  return key;
+}
+
 // --- Trail palette ------------------------------------------------------------
 
 /** The particle texture a trail style should emit. */
@@ -455,6 +504,7 @@ export function generateSharedTextures(scene: Phaser.Scene): void {
   generatePrismTexture(scene);
   generateGlowTexture(scene);
   generateChevronTexture(scene);
+  generateStreakTexture(scene);
   generatePostTexture(scene, 'decor.post', 0x0b3b3a, 0x2dd4bf);
 
   generateSlabTexture(scene, 'obstacle.block', { top: 0x1f4b4a, body: 0x0f2f33, accent: 0x2dd4bf, stripes: true });

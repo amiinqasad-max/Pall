@@ -37,14 +37,22 @@ export function detectDevice(): DeviceProfile {
 
   // deviceMemory is the strongest single signal available and is exactly the
   // axis the performance target is written against (1GB vs 2GB Android).
+  // The <=2 -> low and <=4 -> medium boundaries are unchanged from before
+  // ultraLow existed, so a device that already correctly landed on `low` or
+  // `medium` keeps landing there — only genuinely <=1GB hardware is carved
+  // out into the new, stricter floor below `low`.
   if (memoryGb !== null) {
-    if (memoryGb <= 2) tier = 'low';
+    if (memoryGb <= 1) tier = 'ultraLow';
+    else if (memoryGb <= 2) tier = 'low';
     else if (memoryGb <= 4) tier = 'medium';
     else tier = 'high';
   } else {
     // iOS never reports deviceMemory. Core count plus DPR is a decent proxy:
     // every iPhone that runs a modern browser handles the medium tier fine.
-    if (cores <= 4) tier = 'low';
+    // Same principle: the existing <=4 -> low / <=6 -> medium boundaries are
+    // untouched; only <=2 cores (genuinely old hardware) drops to ultraLow.
+    if (cores <= 2) tier = 'ultraLow';
+    else if (cores <= 4) tier = 'low';
     else if (cores <= 6) tier = 'medium';
     else tier = 'high';
   }
@@ -73,6 +81,17 @@ export function qualityFor(tier: PerfTier): QualitySettings {
 }
 
 /**
+ * True for the two tiers that must shed every non-essential visual cost —
+ * bloom, shadows, extra starfield density, background motes, decorative menu
+ * animation. Centralised here so every call site that used to special-case
+ * `tier === 'low'` treats `ultraLow` the same way instead of silently
+ * skipping it.
+ */
+export function isLiteTier(tier: PerfTier): boolean {
+  return tier === 'low' || tier === 'ultraLow';
+}
+
+/**
  * Watches frame time during play and reports when the current tier is not
  * holding up. Downgrades are permanent for the session — oscillating between
  * tiers is more distracting than simply running at the lower one.
@@ -83,6 +102,8 @@ export class PerformanceGovernor {
   private worst = 0;
   private windowStart = 0;
   private downgrades = 0;
+  /** high -> medium -> low -> ultraLow is three steps; cap matches that. */
+  private static readonly MAX_DOWNGRADES = 3;
   private lastSample = { fps: 60, minFps: 60 };
 
   constructor(
@@ -109,8 +130,9 @@ export class PerformanceGovernor {
 
     const target = GAME.quality[this.tier].targetFps;
     // Two consecutive bad windows, not one, so a single stutter never demotes.
-    if (fps < target * 0.72 && this.downgrades < 2) {
-      const next: PerfTier | null = this.tier === 'high' ? 'medium' : this.tier === 'medium' ? 'low' : null;
+    if (fps < target * 0.72 && this.downgrades < PerformanceGovernor.MAX_DOWNGRADES) {
+      const next: PerfTier | null =
+        this.tier === 'high' ? 'medium' : this.tier === 'medium' ? 'low' : this.tier === 'low' ? 'ultraLow' : null;
       if (next) {
         this.tier = next;
         this.downgrades++;

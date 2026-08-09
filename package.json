@@ -18,7 +18,8 @@
     "check": "node scripts/run-checks.mjs",
     "verify:control": "node scripts/verify-control.mjs",
     "verify:terrain": "node scripts/verify-terrain.mjs",
-    "verify:backend": "node scripts/verify-backend.mjs"
+    "verify:backend": "node scripts/verify-backend.mjs",
+    "verify:championship": "node scripts/verify-championship-ui.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

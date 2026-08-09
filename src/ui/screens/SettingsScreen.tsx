@@ -6,8 +6,18 @@ import { haptics } from '@/systems/haptics';
 import { analytics } from '@/systems/analytics';
 import { storage } from '@/systems/storage';
 import { isBackendConfigured } from '@/services/supabase';
+import { isStaff } from '@/services/admin';
 import { Button, IconButton, Panel, Sheet } from '@/ui/components/primitives';
 import type { PerfTier } from '@/types';
+
+/** 'UltraLow' from naive capitalisation reads as one odd word; spell it out. */
+const QUALITY_LABELS: Record<PerfTier | 'auto', string> = {
+  auto: 'Auto',
+  ultraLow: 'Ultra low',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
 
 export function SettingsScreen() {
   const go = useUi((s) => s.go);
@@ -18,6 +28,11 @@ export function SettingsScreen() {
   const save = useStore((s) => s.save);
   const [confirmReset, setConfirmReset] = useState(false);
   const [driver, setDriver] = useState<string>('');
+  const [staff, setStaff] = useState(false);
+
+  useEffect(() => {
+    void isStaff().then(setStaff);
+  }, []);
 
   useEffect(() => {
     void storage.driver().then(setDriver);
@@ -84,8 +99,8 @@ export function SettingsScreen() {
           </Panel>
 
           <Panel title="Performance">
-            <div className="row" style={{ marginBottom: 'var(--sp-2)' }}>
-              {(['auto', 'low', 'medium', 'high'] as const).map((option) => (
+            <div className="row" style={{ marginBottom: 'var(--sp-2)', flexWrap: 'wrap' }}>
+              {(['auto', 'ultraLow', 'low', 'medium', 'high'] as const).map((option) => (
                 <button
                   key={option}
                   className={`btn btn--sm ${settings.quality === option ? 'btn--primary' : ''}`}
@@ -95,7 +110,7 @@ export function SettingsScreen() {
                     audio.play('ui.toggle');
                   }}
                 >
-                  {option === 'auto' ? 'Auto' : option[0].toUpperCase() + option.slice(1)}
+                  {QUALITY_LABELS[option]}
                 </button>
               ))}
             </div>
@@ -140,6 +155,12 @@ export function SettingsScreen() {
               All artwork and audio in this game is generated procedurally at runtime.
             </p>
           </Panel>
+
+          {staff && (
+            <Button variant="ghost" block onClick={() => go('admin')}>
+              Championship admin
+            </Button>
+          )}
 
           <Button variant="danger" block onClick={() => setConfirmReset(true)}>
             Reset all progress

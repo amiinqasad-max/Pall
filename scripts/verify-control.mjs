@@ -49,7 +49,10 @@ if (await collect.count()) {
   await page.waitForTimeout(400);
 }
 
-await page.locator('.playbtn').click();
+// The play button breathes/shines continuously by design (see global.css),
+// so Playwright's default "wait until the element stops moving" stability
+// check never resolves — smoke.mjs already works around this the same way.
+await page.locator('.playbtn').click({ force: true });
 await page.waitForFunction(() => window.__tartan?.scene?.phase === 'running', undefined, { timeout: 30_000 });
 await page.waitForTimeout(400);
 
@@ -114,7 +117,11 @@ check(
 );
 
 // --- 3. A violent flick cannot teleport the ball -----------------------------
-const maxSpeed = await page.evaluate(() => window.__tartan.scene.constructor.name && 26);
+// Mirrors GAME.control.maxLateralSpeed in src/game/config.ts — this script
+// runs outside the Vite/TS build so it can't import that constant directly;
+// keep the two in step by hand (the same pattern the Supabase migration
+// uses for its own mirror of the client's validation constants).
+const maxSpeed = await page.evaluate(() => window.__tartan.scene.constructor.name && 28);
 const peak = await withSampling(async () => {
   await page.mouse.move(195, 620);
   await page.mouse.down();

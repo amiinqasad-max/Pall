@@ -29,11 +29,17 @@ interface Props {
   coinClaimed: boolean;
   busy: boolean;
   reducedMotion: boolean;
+  /** Set when this run was a Championship run — qualification or final. */
+  championshipPhase?: 'qualifying' | 'final';
+  /** The raw status string the submission RPC returned, e.g. 'qualified',
+   *  'accepted', or a rejection reason. Null while the report is in flight. */
+  championshipResult?: string | null;
   onClaimCoins: () => void;
   onDouble: () => void;
   onRestart: () => void;
   onHome: () => void;
   onDaily: () => void;
+  onChampionship: () => void;
 }
 
 export function ResultsSheet({
@@ -43,11 +49,14 @@ export function ResultsSheet({
   coinClaimed,
   busy,
   reducedMotion,
+  championshipPhase,
+  championshipResult,
   onClaimCoins,
   onDouble,
   onRestart,
   onHome,
   onDaily,
+  onChampionship,
 }: Props) {
   const toast = useUi((s) => s.toast);
   const [doubled, setDoubled] = useState(false);
@@ -169,6 +178,28 @@ export function ResultsSheet({
             <div className="strong">Daily challenge complete</div>
             <Button size="sm" variant="amber" onClick={onDaily} className="btn--block">
               Claim reward
+            </Button>
+          </div>
+        )}
+
+        {championshipPhase && (
+          <div className="panel panel--accent center statcell--in" style={{ marginBottom: 'var(--sp-3)' }}>
+            <div className="strong">
+              {championshipResult === 'qualified'
+                ? '🎉 Championship qualified!'
+                : championshipResult == null
+                  ? 'Reporting to the Championship…'
+                  : championshipPhase === 'qualifying'
+                    ? 'Championship qualification run'
+                    : 'Championship final run'}
+            </div>
+            <p className="tiny dim center" style={{ margin: '4px 0 var(--sp-2)' }}>
+              {championshipPhase === 'qualifying'
+                ? 'This score counts toward today’s qualification target.'
+                : 'This score counts toward your best Championship final attempt.'}
+            </p>
+            <Button size="sm" variant="amber" onClick={onChampionship} className="btn--block">
+              View Championship
             </Button>
           </div>
         )}

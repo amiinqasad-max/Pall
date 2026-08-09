@@ -15,14 +15,36 @@ export const GAME = {
    */
   camera: {
     height: 5.5,
-    /** How far ahead of the camera the ball sits. Gives it screen presence. */
-    playerOffset: 15,
-    /** Road width at the ball, as a fraction of the viewport width. */
-    roadFill: 1.22,
-    /** Where the ball sits vertically, as a fraction of viewport height. */
-    ballAnchor: 0.73,
-    /** The horizon never rises above this fraction of the height. */
-    minHorizon: 0.24,
+    /**
+     * How far ahead of the camera the ball sits. Gives it screen presence.
+     * Nudged up from 15 -> 16: a touch more setback reads as slightly more
+     * headroom above the ball for upcoming road/obstacles without changing
+     * the framing solve's stability (Projector.resize derives everything
+     * else from this and roadFill/ballAnchor, so this is the one lever that
+     * only affects "how far back the camera sits", not the lens itself).
+     */
+    playerOffset: 16,
+    /**
+     * Road width at the ball, as a fraction of the viewport width. Raised
+     * from 1.22 -> 1.27 for a larger, more dominant road on screen (the
+     * "large visible road" composition the Catch Up-style direction calls
+     * for) — still comfortably inside the minHorizon safety clamp below.
+     */
+    roadFill: 1.27,
+    /**
+     * Where the ball sits vertically, as a fraction of viewport height.
+     * Lowered slightly from 0.73 -> 0.71: keeps the ball in the lower-middle
+     * "hero" position the genre expects while opening a little more forward
+     * visibility above it for reading upcoming obstacles earlier.
+     */
+    ballAnchor: 0.71,
+    /**
+     * The horizon never rises above this fraction of the height. Lowered
+     * from 0.24 -> 0.22 to give the larger roadFill above a little more room
+     * before the safety clamp would otherwise narrow the road back down on
+     * a tall/narrow viewport.
+     */
+    minHorizon: 0.22,
     /** Segments drawn per frame before the fog swallows the track. */
     drawDistance: 96,
     /** How hard the camera leans into curves, 0..1. */
@@ -150,6 +172,21 @@ export const GAME = {
    * the heuristics in systems/device.ts.
    */
   quality: {
+    /**
+     * The floor for genuinely old / very weak Android hardware — one rung
+     * below `low`. Never disables gameplay, input, camera or collision: only
+     * the decorative and fill-rate-heavy layers shrink further.
+     */
+    ultraLow: {
+      drawDistance: 40,
+      maxParticles: 0,
+      trailRateScale: 0,
+      shadows: false,
+      fogSteps: 4,
+      resolutionCap: 1,
+      lights: false,
+      targetFps: 30,
+    },
     low: {
       drawDistance: 58,
       maxParticles: 24,
@@ -209,8 +246,13 @@ export const GAME = {
     /** Maximum camera roll while steering, radians (~1.7 degrees). */
     maxRoll: 0.03,
     rollLerp: 6,
-    /** Extra field of view at terminal speed, as a multiplier above 1. */
-    speedFov: 0.1,
+    /**
+     * Extra field of view at terminal speed, as a multiplier above 1. Raised
+     * from 0.1 -> 0.15: the periphery rushing past is the cue that actually
+     * reads as speed once the road texture saturates, and 0.1 was subtle to
+     * the point of being easy to miss at terminal velocity.
+     */
+    speedFov: 0.15,
   },
 
   control: {
@@ -222,13 +264,21 @@ export const GAME = {
      */
     traverseFraction: 0.5,
     /**
-     * Spring frequency in Hz. Higher is more immediate and less forgiving;
-     * ~6.5Hz settles in about 100ms, matching the snap of the lane system it
-     * replaces without the discrete steps.
+     * Spring frequency in Hz. Higher is more immediate and less forgiving.
+     * Raised from 6.5 -> 7.4Hz for a snappier, more "Catch Up"-style
+     * immediate response; the fixed 1/240s substep below is exactly what
+     * makes this safe to raise — it exists precisely so the spring's
+     * stiffness is decoupled from frame time, so a stiffer spring does not
+     * reintroduce the low-end instability the substep was built to avoid.
      */
-    responseHz: 6.5,
-    /** Hard ceiling on lateral speed, m/s. A fast flick cannot teleport. */
-    maxLateralSpeed: 26,
+    responseHz: 7.4,
+    /**
+     * Hard ceiling on lateral speed, m/s. A fast flick cannot teleport.
+     * Raised slightly from 26 -> 28 alongside the stiffer spring above, so a
+     * hard flick still resolves in roughly the same time even though the
+     * spring itself pulls harder.
+     */
+    maxLateralSpeed: 28,
     /**
      * Fixed integration step, seconds. The spring is stiff enough to go
      * unstable at a 30fps frame time, so it is substepped rather than

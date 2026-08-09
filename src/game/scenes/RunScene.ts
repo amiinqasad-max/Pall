@@ -31,13 +31,14 @@ import {
 } from '@/game/world/obstacles';
 import { SpritePool } from '@/game/systems/SpritePool';
 import { Juice } from '@/game/systems/Juice';
+import { SpeedCue, speedCueTier } from '@/game/systems/SpeedCue';
 import { Backdrop } from '@/game/render/Backdrop';
 import { TouchInput } from '@/game/systems/TouchInput';
 import { generateBallTexture, generateSharedTextures, textureForTrail } from '@/game/render/textures';
 import { gameEvents } from '@/game/events';
 import { getSkin, getTrail } from '@/data/cosmetics';
 import { getEnvironment, type Environment } from '@/data/progression';
-import { PerformanceGovernor, qualityFor } from '@/systems/device';
+import { PerformanceGovernor, isLiteTier, qualityFor } from '@/systems/device';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { analytics } from '@/systems/analytics';
@@ -53,6 +54,19 @@ export interface RunConfig {
   /** Fixed seed for the daily challenge; omitted for a normal run. */
   seed?: number;
   reducedMotion: boolean;
+  /**
+   * Set when this run counts toward the Championship. The caller (PlayScreen)
+   * is responsible for passing the matching challenge-wide `seed` alongside
+   * this so every participant faces the identical track. `die()` no longer
+   * reads this to suppress continues in the 'final' phase — Coins and
+   * Revives are explicitly allowed there now (a qualified player's normal
+   * Coin balance funds a revive the same way it does outside the
+   * Championship, see supabase/migrations/0003_coin_economy.sql). Kept for
+   * the seed selection above and for the ad-based "watch ad to continue"
+   * offer, which PlayScreen still hides during the final. Omitted entirely
+   * for a normal run.
+   */
+  championshipPhase?: 'qualifying' | 'final';
 }
 
 type RunPhase = 'idle' | 'countdown' | 'running' | 'dying' | 'dead' | 'paused';
@@ -81,6 +95,7 @@ export class RunScene extends Phaser.Scene {
   private flashLayer!: Phaser.GameObjects.Rectangle;
   private backdrop!: Backdrop;
   private juice!: Juice;
+  private speedCue!: SpeedCue;
 
   private camera: CameraState = { z: 0, x: 0, height: GAME.camera.height, curveX: 0, worldY: 0 };
 
@@ -155,7 +170,7 @@ export class RunScene extends Phaser.Scene {
     this.sky = this.add.graphics().setDepth(0);
     this.backdrop = new Backdrop(this, this.env, this.config.tier, this.config.reducedMotion);
     this.road = new RoadRenderer(this, this.projector, this.env, this.quality.drawDistance);
-    this.road.setQuality(this.quality.drawDistance, this.config.tier !== 'low');
+    this.road.setQuality(this.quality.drawDistance, !isLiteTier(this.config.tier));
 
     this.obstaclePool = new SpritePool(this, 'obstacle.block', 28, 20);
     this.prismPool = new SpritePool(this, 'prism', 16, 22);
@@ -178,13 +193,14 @@ export class RunScene extends Phaser.Scene {
 
     this.juice = new Juice(this.cameras.main, {
       reducedMotion: this.config.reducedMotion,
-      allowShake: this.config.tier !== 'low',
+      allowShake: !isLiteTier(this.config.tier),
     });
 
     this.applyPostFx();
 
     this.track = new TrackGenerator(0);
     this.input$ = new TouchInput(this);
+    this.speedCue = new SpeedCue(this, speedCueTier(this.config.tier, this.config.reducedMotion));
     this.governor = new PerformanceGovernor(this.config.tier, (tier) => this.applyTier(tier));
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
@@ -205,7 +221,7 @@ export class RunScene extends Phaser.Scene {
    * medium tier gets a softer, cheaper configuration than high.
    */
   private applyPostFx(): void {
-    if (this.config.reducedMotion || this.config.tier === 'low') return;
+    if (this.config.reducedMotion || isLiteTier(this.config.tier)) return;
     try {
       // Restraint is the whole game here. Phaser's bloom has no luminance
       // threshold — it blooms the entire frame — so anything above about 0.5
@@ -285,6 +301,7 @@ export class RunScene extends Phaser.Scene {
     this.drawVignette(width, height);
     this.flashLayer?.setSize(width, height);
     this.backdrop?.resize(width, height, this.projector.horizon);
+    this.speedCue?.resize(width, height);
   }
 
   private drawSky(width: number, height: number): void {
@@ -305,7 +322,7 @@ export class RunScene extends Phaser.Scene {
     // Starfield. Seeded from the environment id so a given world always has
     // the same sky, and drawn once into the static layer rather than per frame.
     const stars = createRng(hashString(this.env.id));
-    const count = this.config.tier === 'low' ? 40 : 110;
+    const count = isLiteTier(this.config.tier) ? 40 : 110;
     for (let i = 0; i < count; i++) {
       const x = stars.range(0, width);
       // Bias stars upward: a uniform spread looks like noise, a squared
@@ -926,10 +943,16 @@ export class RunScene extends Phaser.Scene {
 
     if (this.burstEmitter) {
       this.burstEmitter.setParticleTint(0xf87171);
-      this.burstEmitter.emitParticleAt(this.ball.x, this.ball.y, this.config.tier === 'low' ? 10 : 24);
+      this.burstEmitter.emitParticleAt(this.ball.x, this.ball.y, isLiteTier(this.config.tier) ? 10 : 24);
     }
     this.trailEmitter?.stop();
 
+    // Continue/revive is allowed in the Championship final: a qualified
+    // player may spend Coins from their normal balance — however earned —
+    // to revive here exactly like a normal run. `continued` still caps it at
+    // one revive per run, in every phase. (PlayScreen separately hides the
+    // ad-based "watch ad to continue" offer during the final; that
+    // restriction is unchanged and lives entirely in the UI layer, not here.)
     const canContinue = !this.continued && this.runTime > 8;
     analytics.track('run_death', {
       cause,
@@ -961,6 +984,10 @@ export class RunScene extends Phaser.Scene {
     this.renderPrisms();
     this.renderObstacles();
     this.renderBall();
+    // Peripheral only — rendered before the flash wash so a crash's red flash
+    // still reads as the topmost, most urgent layer.
+    const speedIntensity = this.phase === 'running' ? this.intensity() : 0;
+    this.speedCue.update(speedIntensity, this.targetBoost > 1, this.runTime);
     this.renderFlash();
   }
 
@@ -1307,7 +1334,8 @@ export class RunScene extends Phaser.Scene {
 
   private applyTier(tier: PerfTier): void {
     this.quality = qualityFor(tier);
-    this.road.setQuality(this.quality.drawDistance, tier !== 'low');
+    this.road.setQuality(this.quality.drawDistance, !isLiteTier(tier));
+    this.speedCue.setQuality(tier);
     this.projector.setFogDistance(this.quality.drawDistance * GAME.world.segmentLength * 0.85);
     if (this.trailEmitter) {
       const trail = getTrail(this.config.trailId);
@@ -1326,6 +1354,7 @@ export class RunScene extends Phaser.Scene {
     this.prismPool.destroy();
     this.decorPool.destroy();
     this.backdrop.destroy();
+    this.speedCue.destroy();
     this.trailEmitter?.destroy();
     this.burstEmitter?.destroy();
     this.road.destroy();

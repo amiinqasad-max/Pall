@@ -11,6 +11,7 @@
 import Phaser from 'phaser';
 import { RunScene, type RunConfig } from '@/game/scenes/RunScene';
 import { GAME } from '@/game/config';
+import { isLiteTier } from '@/systems/device';
 import type { PerfTier } from '@/types';
 
 let game: Phaser.Game | null = null;
@@ -42,7 +43,7 @@ export function launchGame(options: LaunchOptions): void {
     // AudioContext costs memory and fights ours for the output device.
     audio: { noAudio: true },
     render: {
-      antialias: options.tier !== 'low',
+      antialias: !isLiteTier(options.tier),
       powerPreference: 'high-performance',
       // Rounding sprite positions to whole pixels removes the shimmer on the
       // road banding without needing any filtering.
