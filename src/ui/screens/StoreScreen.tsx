@@ -2,28 +2,32 @@
  * The store.
  *
  * Cosmetics, plus the Coins tab: earn (limited gameplay rewards handled
- * elsewhere in Missions, Watch Video, Read Article) and buy. There is no
+ * elsewhere in Missions, plus Read Article here) and buy. There is no
  * bundle, no gacha, no timer on the cosmetics side, and nothing sold here
  * changes how the ball handles — the copy says so plainly, because a player
  * who suspects pay-to-win stops trusting the leaderboard.
+ *
+ * Buying a Coins package opens a pre-filled WhatsApp order (see
+ * supabase/migrations/0005_coins_store_v2.sql) — nothing here ever credits
+ * coins itself; a staff member verifies the payment and credits the order
+ * by hand through the same server-authoritative ledger every other coin
+ * source writes to.
  */
 
 import { useEffect, useState } from 'react';
 import { SKINS, TRAILS, evaluateUnlock } from '@/data/cosmetics';
-import { ARTICLES, type Article } from '@/data/articles';
 import { useCoins, useLevel, useStore } from '@/state/store';
 import { useEconomy } from '@/state/economy';
 import { useUi } from '@/state/ui';
-import { ads } from '@/systems/ads';
 import { audio } from '@/systems/audio';
 import { haptics } from '@/systems/haptics';
 import { fetchCoinPackages, recordPurchaseAttempt } from '@/services/championship';
-import { ARTICLE_MIN_READ_SECONDS } from '@/services/coinEconomy';
+import { ARTICLE_MIN_READ_SECONDS, fetchActiveArticles } from '@/services/coinEconomy';
 import { Button, CoinChip, IconButton, Panel, Sheet, Tabs } from '@/ui/components/primitives';
 import { ArticleReaderSheet } from '@/ui/components/ArticleReaderSheet';
 import { CoinHistorySheet } from '@/ui/components/CoinHistorySheet';
 import { num } from '@/core/format';
-import type { Cosmetic, CoinPackage, CoinRewardClaimResult } from '@/types';
+import type { Article, Cosmetic, CoinPackage, CoinRewardClaimResult } from '@/types';
 
 const CLAIM_MESSAGES: Record<CoinRewardClaimResult, string> = {
   credited: 'Reward granted',
@@ -35,16 +39,19 @@ const CLAIM_MESSAGES: Record<CoinRewardClaimResult, string> = {
   not_signed_in: 'Not signed in',
 };
 
-/**
- * No real payment processor is wired into this build — buying a package
- * records a real, auditable purchase_records row (see
- * supabase/migrations/0002_championship.sql) but coins are only credited
- * once a staff member verifies it through admin_verify_and_credit_purchase.
- * The UI says so plainly rather than pretending a purchase completed —
- * showing "success" for money that was never actually collected would be
- * exactly the "fake purchase confirmation" the brief says to prevent.
- */
-const PAYMENTS_LIVE = false;
+/** The one number in this file a real deployment must change — see
+ *  supabase/migrations/0005_coins_store_v2.sql's header. */
+const WHATSAPP_NUMBER = '251915285572';
+
+function buildOrderMessage(pkg: CoinPackage, orderId: string): string {
+  return (
+    `TARTAN Coins order\n` +
+    `Package: ${pkg.name}\n` +
+    `Coins: ${pkg.coins}\n` +
+    `Price: ${pkg.priceBirr} Birr\n` +
+    `Order ID: ${orderId}`
+  );
+}
 
 export function StoreScreen() {
   const go = useUi((s) => s.go);
@@ -58,39 +65,43 @@ export function StoreScreen() {
 
   const economyStatus = useEconomy((s) => s.status);
   const refreshEconomy = useEconomy((s) => s.refresh);
-  const startVideo = useEconomy((s) => s.startVideo);
-  const claimVideo = useEconomy((s) => s.claimVideo);
 
   const [tab, setTab] = useState<'skin' | 'trail' | 'coins'>('skin');
   const [selected, setSelected] = useState<Cosmetic | null>(null);
-  const [busy, setBusy] = useState(false);
   const [packages, setPackages] = useState<CoinPackage[]>([]);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [articlesLoaded, setArticlesLoaded] = useState(false);
   const [readingArticle, setReadingArticle] = useState<Article | null>(null);
 
   const items: Cosmetic[] = tab === 'skin' ? SKINS : tab === 'trail' ? TRAILS : [];
 
   useEffect(() => {
-    if (tab === 'coins' && packages.length === 0) {
-      void fetchCoinPackages().then(setPackages);
-    }
-    if (tab === 'coins') void refreshEconomy();
-  }, [tab, packages.length, refreshEconomy]);
+    if (tab !== 'coins') return;
+    if (packages.length === 0) void fetchCoinPackages().then(setPackages);
+    if (!articlesLoaded) void fetchActiveArticles().then((a) => { setArticles(a); setArticlesLoaded(true); });
+    void refreshEconomy();
+  }, [tab, packages.length, articlesLoaded, refreshEconomy]);
 
+  // Buying a package never credits coins itself — it records a real,
+  // auditable purchase_records row (so a staff member has something to
+  // approve against) and opens WhatsApp with the order pre-filled in.
+  // Coins are only ever credited once staff verifies the payment and
+  // approves the order from the admin panel's Coin Orders section.
   const buyPackage = async (pkg: CoinPackage): Promise<void> => {
     if (purchasing) return;
     setPurchasing(pkg.id);
-    // A per-attempt token; a real payment SDK would hand back a signed
-    // receipt here instead. See PAYMENTS_LIVE above.
     const token = `${pkg.id}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
-    const purchaseId = await recordPurchaseAttempt(pkg.id, 'web', token);
+    const purchaseId = await recordPurchaseAttempt(pkg.id, 'whatsapp', token);
     setPurchasing(null);
     if (!purchaseId) {
-      toast('Could not start that purchase', 'error');
+      toast('Could not start that order', 'error');
       return;
     }
-    toast('Purchase recorded — pending verification', 'info', '🧾');
+    const message = buildOrderMessage(pkg, purchaseId);
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    toast('Order recorded — send the WhatsApp message to complete it', 'info', '🧾');
   };
 
   const onBuy = (cosmetic: Cosmetic): void => {
@@ -107,36 +118,9 @@ export function StoreScreen() {
     else if (result.error === 'needs_level') toast('Level requirement not met', 'error');
   };
 
-  // Watch Video: starts a real server session first (so the minimum-watch
-  // floor is measured against the server's own clock), only asks the ad
-  // provider to actually serve a rewarded video, and only claims the reward
-  // once that provider reports completion — never merely because the ad
-  // started. The daily cap and replay protection are enforced by
-  // claim_video_reward itself; this is just the UI around it.
-  const watchVideo = async (): Promise<void> => {
-    if (busy) return;
-    setBusy(true);
-    const sessionId = await startVideo();
-    if (!sessionId) {
-      setBusy(false);
-      toast('Couldn’t start that right now', 'error');
-      return;
-    }
-    const outcome = await ads.rewarded('reward_video_coins');
-    if (!outcome.completed) {
-      setBusy(false);
-      toast('Reward not granted', 'error');
-      return;
-    }
-    const result = await claimVideo(sessionId);
-    setBusy(false);
-    if (result === 'credited') {
-      audio.play('coin');
-      haptics.fire('reward');
-      toast(`+${economyStatus?.videoRewardCoins ?? 10} coins`, 'reward', '🪙');
-    } else {
-      toast(CLAIM_MESSAGES[result], 'error');
-    }
+  const readArticle = (): void => {
+    if (articles.length === 0) return;
+    setReadingArticle(articles[Math.floor(Math.random() * articles.length)]);
   };
 
   const onArticleResult = (result: string): void => {
@@ -193,35 +177,6 @@ export function StoreScreen() {
             <Panel>
               <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
                 <div style={{ minWidth: 0 }}>
-                  <div className="strong">▶ Watch Video</div>
-                  <div className="small muted">
-                    Today: {num((economyStatus?.videoClaimsToday ?? 0) * (economyStatus?.videoRewardCoins ?? 10))}/
-                    {num((economyStatus?.videoRewardDailyLimit ?? 0) * (economyStatus?.videoRewardCoins ?? 10))} Coins
-                    earned
-                  </div>
-                </div>
-                <div className="strong numeric">+{economyStatus?.videoRewardCoins ?? 10} 🪙</div>
-              </div>
-              <Button
-                variant="amber"
-                block
-                disabled={
-                  busy ||
-                  (economyStatus != null && economyStatus.videoClaimsToday >= economyStatus.videoRewardDailyLimit)
-                }
-                onClick={() => void watchVideo()}
-              >
-                {busy
-                  ? 'Loading…'
-                  : economyStatus != null && economyStatus.videoClaimsToday >= economyStatus.videoRewardDailyLimit
-                    ? 'Daily limit reached'
-                    : 'WATCH VIDEO'}
-              </Button>
-            </Panel>
-
-            <Panel>
-              <div className="row row--between" style={{ marginBottom: 'var(--sp-2)' }}>
-                <div style={{ minWidth: 0 }}>
                   <div className="strong">📖 Read Article</div>
                   <div className="small muted">
                     {Math.ceil(ARTICLE_MIN_READ_SECONDS / 60)} min read · Today:{' '}
@@ -234,15 +189,17 @@ export function StoreScreen() {
                 variant="amber"
                 block
                 disabled={
-                  economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
+                  articlesLoaded && articles.length === 0
+                    ? true
+                    : economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
                 }
-                onClick={() =>
-                  setReadingArticle(ARTICLES[Math.floor(Math.random() * ARTICLES.length)] ?? ARTICLES[0])
-                }
+                onClick={readArticle}
               >
-                {economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
-                  ? 'Daily limit reached'
-                  : 'READ ARTICLE'}
+                {articlesLoaded && articles.length === 0
+                  ? 'No articles available'
+                  : economyStatus != null && economyStatus.articleClaimsToday >= economyStatus.articleRewardDailyLimit
+                    ? 'Daily limit reached'
+                    : 'READ ARTICLE'}
               </Button>
             </Panel>
 
@@ -251,14 +208,12 @@ export function StoreScreen() {
               BUY COINS
             </p>
 
-            {!PAYMENTS_LIVE && (
-              <div className="panel panel--amber center">
-                <p className="tiny" style={{ margin: 0 }}>
-                  Payments aren’t connected in this build yet — buying a package records the request for review
-                  rather than charging you or granting coins immediately.
-                </p>
-              </div>
-            )}
+            <div className="panel panel--amber center">
+              <p className="tiny" style={{ margin: 0 }}>
+                Buying a package opens WhatsApp with your order pre-filled in. It doesn’t charge you or grant coins by
+                itself — send the message, and a staff member credits your coins once your payment is confirmed.
+              </p>
+            </div>
             <div className="grid-2">
               {packages.map((pkg) => (
                 <button
@@ -270,7 +225,7 @@ export function StoreScreen() {
                   <div className="cosmetic__name">🪙 {num(pkg.coins)}</div>
                   <div className="cosmetic__meta">{pkg.name}</div>
                   <div className="strong" style={{ marginTop: 'var(--sp-2)' }}>
-                    {purchasing === pkg.id ? 'Requesting…' : `$${(pkg.priceUsdCents / 100).toFixed(2)}`}
+                    {purchasing === pkg.id ? 'Opening WhatsApp…' : `${num(pkg.priceBirr)} Birr`}
                   </div>
                 </button>
               ))}
@@ -323,7 +278,7 @@ export function StoreScreen() {
 
         <p className="tiny dim center" style={{ marginTop: 'var(--sp-4)' }}>
           Every item is cosmetic. Nothing sold here changes speed, control or difficulty. Need coins? Head to the
-          Coins tab above — watch a video, read an article, or buy a pack.
+          Coins tab above — read an article or buy a pack.
         </p>
         </>
         )}

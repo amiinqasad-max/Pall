@@ -1,5 +1,5 @@
 /**
- * Coin economy: Watch Video and Read Article earning.
+ * Coin economy: Read Article earning.
  *
  * Mirrors `services/championship.ts`'s shape deliberately — same session
  * bootstrap, same "no backend configured"/"offline" fallbacks, same
@@ -8,14 +8,16 @@
  * one for later replay risks double-counting exactly the way a Championship
  * submission would).
  *
- * Every credit here goes through supabase/migrations/0003_coin_economy.sql's
- * RPCs — the client never writes profiles.coins or coin_transactions
- * directly, and never decides on its own that a reward was earned.
+ * Every credit here goes through supabase/migrations/0003_coin_economy.sql /
+ * 0005_coins_store_v2.sql's RPCs — the client never writes profiles.coins or
+ * coin_transactions directly, and never decides on its own that a reward was
+ * earned. Watch Video was removed entirely in 0005 — there is no client-side
+ * trace of it left either.
  */
 
 import { ensureSession, isOnline, supabase } from '@/services/supabase';
 import { analytics } from '@/systems/analytics';
-import type { CoinHistoryEntry, CoinRewardClaimResult, EconomyStatus } from '@/types';
+import type { Article, CoinHistoryEntry, CoinRewardClaimResult, EconomyStatus } from '@/types';
 
 /**
  * Mirrors `game_constants.article_min_read_seconds` (set in
@@ -30,9 +32,6 @@ export const ARTICLE_MIN_READ_SECONDS = 120;
 function mapStatus(row: Record<string, unknown>): EconomyStatus {
   return {
     coins: Number(row.coins),
-    videoRewardCoins: Number(row.video_reward_coins),
-    videoRewardDailyLimit: Number(row.video_reward_daily_limit),
-    videoClaimsToday: Number(row.video_claims_today),
     articleRewardCoins: Number(row.article_reward_coins),
     articleRewardDailyLimit: Number(row.article_reward_daily_limit),
     articleClaimsToday: Number(row.article_claims_today),
@@ -40,7 +39,7 @@ function mapStatus(row: Record<string, unknown>): EconomyStatus {
   };
 }
 
-/** Balance + both earn methods' reward amounts and today's progress, in one
+/** Balance + the Read Article reward amount and today's progress, in one
  *  round trip — null when signed out, offline, or the backend isn't
  *  configured. */
 export async function fetchEconomyStatus(): Promise<EconomyStatus | null> {
@@ -79,51 +78,31 @@ export async function fetchCoinHistory(limit = 50): Promise<CoinHistoryEntry[]> 
   }
 }
 
-/** Starts a video-ad reward session; the server timestamps `started_at`
- *  itself, so the elapsed time checked at claim time can't be shortened by
- *  a manipulated client clock. Returns null if the request couldn't even be
- *  made (offline, signed out, backend unconfigured, rate limited). */
-export async function startVideoAdSession(): Promise<string | null> {
+/** Every currently-active, admin-managed article link (tartan.articles).
+ *  The client picks one at random and opens its URL — there is no in-app
+ *  article content anymore. Empty (not null) when none are configured, so
+ *  the UI can distinguish "no articles yet" from "couldn't reach server". */
+export async function fetchActiveArticles(): Promise<Article[]> {
   const sb = await supabase();
-  const session = await ensureSession();
-  if (!sb || !session || !isOnline()) return null;
+  if (!sb || !isOnline()) return [];
   try {
-    const { data, error } = await sb.rpc('start_video_ad_session');
-    if (error) {
-      analytics.track('video_reward_session_failed', { message: error.message });
-      return null;
-    }
-    return (data as string) ?? null;
-  } catch (err) {
-    analytics.track('video_reward_session_failed', { message: String(err) });
-    return null;
+    const { data, error } = await sb.from('articles').select('*').eq('active', true).order('created_at');
+    if (error || !data) return [];
+    return (data as Record<string, unknown>[]).map((row) => ({
+      id: row.id as string,
+      title: row.title as string,
+      url: row.url as string,
+      active: Boolean(row.active),
+    }));
+  } catch {
+    return [];
   }
 }
 
-/** Claims the reward for a video session — only call this after the ad
- *  provider has actually confirmed the rewarded video completed, never
- *  merely because it started. */
-export async function claimVideoReward(sessionId: string): Promise<CoinRewardClaimResult> {
-  const sb = await supabase();
-  if (!sb || !isOnline()) return 'offline';
-  const session = await ensureSession();
-  if (!session) return 'not_signed_in';
-  try {
-    const { data, error } = await sb.rpc('claim_video_reward', { p_session_id: sessionId });
-    if (error) {
-      analytics.track('video_reward_claim_failed', { message: error.message });
-      return 'offline';
-    }
-    analytics.track('video_reward_claimed', { result: data });
-    return (data as CoinRewardClaimResult) ?? 'not_found';
-  } catch (err) {
-    analytics.track('video_reward_claim_failed', { message: String(err) });
-    return 'offline';
-  }
-}
-
-/** Starts a timed article-read session for a given article id. Same
- *  server-timestamped-start pattern as the video session above. */
+/** Starts a timed article-read session for a given article id — the server
+ *  timestamps `started_at` itself, so the elapsed time checked at claim time
+ *  can't be shortened by a manipulated client clock, and rejects any id that
+ *  isn't a real, currently-active admin-managed article. */
 export async function startArticleSession(articleId: string): Promise<string | null> {
   const sb = await supabase();
   const session = await ensureSession();

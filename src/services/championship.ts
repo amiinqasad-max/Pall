@@ -404,7 +404,7 @@ export async function fetchCoinPackages(): Promise<CoinPackage[]> {
       id: row.id as string,
       name: row.name as string,
       coins: Number(row.coins),
-      priceUsdCents: Number(row.price_usd_cents),
+      priceBirr: Number(row.price_birr),
     }));
   } catch {
     return [];
@@ -412,13 +412,15 @@ export async function fetchCoinPackages(): Promise<CoinPackage[]> {
 }
 
 /**
- * Records a purchase attempt for admin review (see the migration's header:
- * no live store-receipt verification is wired in here). Returns the purchase
- * record id, or null if the request couldn't be made at all.
+ * Records a purchase attempt for admin review (see
+ * supabase/migrations/0005_coins_store_v2.sql: buying a package opens a
+ * pre-filled WhatsApp message, never credits coins itself). Returns the
+ * purchase record id — used as the order reference in that message — or
+ * null if the request couldn't be made at all.
  */
 export async function recordPurchaseAttempt(
   packageId: string,
-  platform: 'web' | 'ios' | 'android',
+  platform: 'web' | 'ios' | 'android' | 'whatsapp',
   receiptToken: string,
 ): Promise<string | null> {
   const sb = await supabase();

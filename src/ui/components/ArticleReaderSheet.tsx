@@ -1,19 +1,22 @@
 /**
  * The "Read Article" earn flow.
  *
- * Starts a real server-timestamped session on open (see
- * tartan.start_article_session in 0003_coin_economy.sql) and only enables
- * the claim button once the LOCAL countdown — mirroring the server's own
- * minimum-read-time floor — reaches zero. The countdown is purely for UX
- * pacing; the actual gate is the server re-checking elapsed time against
- * its own clock when the claim is submitted, so racing this UI or fiddling
- * with the device clock does not shorten anything that actually counts.
+ * Articles are admin-managed links (tartan.articles, see
+ * supabase/migrations/0005_coins_store_v2.sql) — there is no in-app article
+ * content anymore, so this opens the real URL in a new tab and tracks the
+ * read with a real server-timestamped session (see
+ * tartan.start_article_session), enabling the claim button only once the
+ * LOCAL countdown — mirroring the server's own minimum-read-time floor —
+ * reaches zero. The countdown is purely for UX pacing; the actual gate is
+ * the server re-checking elapsed time against its own clock when the claim
+ * is submitted, so racing this UI or fiddling with the device clock does
+ * not shorten anything that actually counts.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useEconomy } from '@/state/economy';
 import { Button, Sheet } from '@/ui/components/primitives';
-import type { Article } from '@/data/articles';
+import type { Article } from '@/types';
 
 export function ArticleReaderSheet({
   article,
@@ -40,10 +43,18 @@ export function ArticleReaderSheet({
     if (startedRef.current) return;
     startedRef.current = true;
     void startArticle(article.id).then((id) => {
-      if (!id) setFailedToStart(true);
+      if (!id) {
+        setFailedToStart(true);
+        return;
+      }
       setSessionId(id);
+      // Opt-in and user-initiated (this effect only runs because the player
+      // just tapped "Read Article"), so a popup blocker should never see
+      // this as an unsolicited pop — but if it does, the "Open article"
+      // button below is the fallback.
+      window.open(article.url, '_blank', 'noopener,noreferrer');
     });
-  }, [article.id, startArticle]);
+  }, [article.id, article.url, startArticle]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -64,12 +75,15 @@ export function ArticleReaderSheet({
 
   return (
     <Sheet title={`📖 ${article.title}`} onClose={onClose}>
-      <div className="stack" style={{ maxHeight: '20rem', overflowY: 'auto', marginBottom: 'var(--sp-3)' }}>
-        {article.paragraphs.map((p, i) => (
-          <p key={i} className="small" style={{ margin: 0, lineHeight: 1.6 }}>
-            {p}
-          </p>
-        ))}
+      <p className="small muted" style={{ marginBottom: 'var(--sp-3)' }}>
+        The article opened in a new tab. Read it there, then come back here to claim your coins once the timer runs
+        out.
+      </p>
+
+      <div style={{ marginBottom: 'var(--sp-3)' }}>
+        <Button variant="ghost" block onClick={() => window.open(article.url, '_blank', 'noopener,noreferrer')}>
+          Open article again
+        </Button>
       </div>
 
       {failedToStart && (

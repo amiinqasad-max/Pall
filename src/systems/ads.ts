@@ -30,12 +30,7 @@ export type AdPlacement =
   | 'reward_continue'
   | 'reward_double'
   | 'reward_daily_bonus'
-  | 'reward_mystery'
-  /** The Store's "Watch Video" earn method (see state/economy.ts) — a
-   *  separate, smaller, server-tracked reward from reward_coins' own
-   *  post-run bonus, so it gets its own placement label rather than
-   *  sharing frequency-capping/analytics with an unrelated flow. */
-  | 'reward_video_coins';
+  | 'reward_mystery';
 
 export type AdOutcome = {
   completed: boolean;

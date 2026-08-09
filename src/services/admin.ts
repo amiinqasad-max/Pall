@@ -234,12 +234,9 @@ export async function updateRegionSetting(country: string, enabled: boolean, min
   return !error;
 }
 
-// --- Coin economy config (supabase/migrations/0003_coin_economy.sql) -------
+// --- Coin economy config (0003_coin_economy.sql, 0005_coins_store_v2.sql) --
 
 export interface AdminEconomyConfig {
-  videoRewardCoins: number;
-  videoRewardDailyLimit: number;
-  videoMinWatchSeconds: number;
   articleRewardCoins: number;
   articleRewardDailyLimit: number;
   articleMinReadSeconds: number;
@@ -249,29 +246,19 @@ export interface AdminEconomyConfig {
 /** Reads straight off tartan.game_constants (already public-select, see
  *  0001_init.sql) rather than a dedicated RPC — there's nothing sensitive
  *  in these values, and the table is the single source of truth every RPC
- *  (spend_coins_for_revive, claim_video_reward, claim_article_reward,
- *  economy_status) already reads from directly. */
+ *  (spend_coins_for_revive, claim_article_reward, economy_status) already
+ *  reads from directly. Watch Video's constants were removed entirely in
+ *  0005 — there's nothing left here to read for it. */
 export async function fetchEconomyConfig(): Promise<AdminEconomyConfig | null> {
   const sb = await supabase();
   if (!sb) return null;
   const { data, error } = await sb
     .from('game_constants')
     .select('key, value')
-    .in('key', [
-      'video_reward_coins',
-      'video_reward_daily_limit',
-      'video_min_watch_seconds',
-      'article_reward_coins',
-      'article_reward_daily_limit',
-      'article_min_read_seconds',
-      'revive_cost_coins',
-    ]);
+    .in('key', ['article_reward_coins', 'article_reward_daily_limit', 'article_min_read_seconds', 'revive_cost_coins']);
   if (error || !data) return null;
   const byKey = Object.fromEntries((data as { key: string; value: number }[]).map((r) => [r.key, Number(r.value)]));
   return {
-    videoRewardCoins: byKey.video_reward_coins ?? 10,
-    videoRewardDailyLimit: byKey.video_reward_daily_limit ?? 10,
-    videoMinWatchSeconds: byKey.video_min_watch_seconds ?? 8,
     articleRewardCoins: byKey.article_reward_coins ?? 30,
     articleRewardDailyLimit: byKey.article_reward_daily_limit ?? 3,
     articleMinReadSeconds: byKey.article_min_read_seconds ?? 120,
@@ -283,13 +270,125 @@ export async function updateEconomyConfig(cfg: AdminEconomyConfig): Promise<bool
   const sb = await supabase();
   if (!sb) return false;
   const { error } = await sb.rpc('admin_update_economy_config', {
-    p_video_reward_coins: cfg.videoRewardCoins,
-    p_video_reward_daily_limit: cfg.videoRewardDailyLimit,
-    p_video_min_watch_seconds: cfg.videoMinWatchSeconds,
     p_article_reward_coins: cfg.articleRewardCoins,
     p_article_reward_daily_limit: cfg.articleRewardDailyLimit,
     p_article_min_read_seconds: cfg.articleMinReadSeconds,
     p_revive_cost_coins: cfg.reviveCostCoins,
   });
+  return !error;
+}
+
+// --- Articles (0005_coins_store_v2.sql) -------------------------------------
+
+export interface AdminArticleRow {
+  id: string;
+  title: string;
+  url: string;
+  active: boolean;
+}
+
+/** Staff sees every article, active or not (RLS: `active or is_staff()`);
+ *  a non-staff caller would only ever see the active ones anyway. */
+export async function fetchAllArticles(): Promise<AdminArticleRow[]> {
+  const sb = await supabase();
+  if (!sb) return [];
+  const { data, error } = await sb.from('articles').select('*').order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    title: r.title as string,
+    url: r.url as string,
+    active: Boolean(r.active),
+  }));
+}
+
+/** Creates a new article when `id` is null, otherwise edits the existing
+ *  one in place (title/url/active can all change together). */
+export async function upsertArticle(
+  id: string | null,
+  title: string,
+  url: string,
+  active: boolean,
+): Promise<boolean> {
+  const sb = await supabase();
+  if (!sb) return false;
+  const { error } = await sb.rpc('admin_upsert_article', {
+    p_id: id,
+    p_title: title,
+    p_url: url,
+    p_active: active,
+  });
+  return !error;
+}
+
+export async function deleteArticle(id: string): Promise<boolean> {
+  const sb = await supabase();
+  if (!sb) return false;
+  const { error } = await sb.rpc('admin_delete_article', { p_id: id });
+  return !error;
+}
+
+// --- Coin Orders (WhatsApp purchases, 0005_coins_store_v2.sql) -------------
+
+export interface AdminCoinOrderRow {
+  id: string;
+  userId: string;
+  packageId: string;
+  packageName: string;
+  coins: number;
+  priceBirr: number;
+  platform: string;
+  receiptToken: string;
+  status: string;
+  createdAt: string;
+}
+
+/** Every purchase_records row, newest first — staff sees every user's
+ *  orders (RLS: `own row or staff`). Embeds coin_packages via its foreign
+ *  key so the coins/package name show up without a second round trip. */
+export async function fetchCoinOrders(status?: string): Promise<AdminCoinOrderRow[]> {
+  const sb = await supabase();
+  if (!sb) return [];
+  let query = sb
+    .from('purchase_records')
+    .select('*, coin_packages(name, coins)')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (status) query = query.eq('status', status);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map((r) => {
+    const pkg = (r.coin_packages ?? null) as { name?: string; coins?: number } | null;
+    return {
+      id: r.id as string,
+      userId: r.user_id as string,
+      packageId: r.package_id as string,
+      packageName: pkg?.name ?? (r.package_id as string),
+      coins: Number(pkg?.coins ?? 0),
+      priceBirr: Number(r.price_birr),
+      platform: r.platform as string,
+      receiptToken: r.receipt_token as string,
+      status: r.status as string,
+      createdAt: r.created_at as string,
+    };
+  });
+}
+
+/** Credits the order's coins to its buyer and marks it `credited` — the
+ *  only thing that ever actually grants coins for a purchase. Staff-gated
+ *  server-side; confirms the payment was received outside this system
+ *  before calling. */
+export async function approveCoinOrder(purchaseId: string): Promise<boolean> {
+  const sb = await supabase();
+  if (!sb) return false;
+  const { error } = await sb.rpc('admin_verify_and_credit_purchase', { p_purchase_id: purchaseId });
+  return !error;
+}
+
+/** Closes out a bogus/duplicate/unpaid order without crediting anything. */
+export async function rejectCoinOrder(purchaseId: string, reason: string): Promise<boolean> {
+  const sb = await supabase();
+  if (!sb) return false;
+  const { error } = await sb.rpc('admin_reject_purchase', { p_purchase_id: purchaseId, p_reason: reason });
   return !error;
 }

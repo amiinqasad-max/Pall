@@ -6,14 +6,7 @@
  */
 
 import { create } from 'zustand';
-import {
-  claimArticleReward,
-  claimVideoReward,
-  fetchCoinHistory,
-  fetchEconomyStatus,
-  startArticleSession,
-  startVideoAdSession,
-} from '@/services/coinEconomy';
+import { claimArticleReward, fetchCoinHistory, fetchEconomyStatus, startArticleSession } from '@/services/coinEconomy';
 import { useStore } from '@/state/store';
 import type { CoinHistoryEntry, CoinRewardClaimResult, EconomyStatus } from '@/types';
 
@@ -24,8 +17,6 @@ interface EconomyState {
   ready: boolean;
 
   refresh(): Promise<void>;
-  startVideo(): Promise<string | null>;
-  claimVideo(sessionId: string): Promise<CoinRewardClaimResult>;
   startArticle(articleId: string): Promise<string | null>;
   claimArticle(sessionId: string): Promise<CoinRewardClaimResult>;
   loadHistory(): Promise<void>;
@@ -42,18 +33,6 @@ export const useEconomy = create<EconomyState>((set, get) => ({
     const status = await fetchEconomyStatus();
     set({ status, loading: false, ready: true });
     if (status) useStore.getState().applyServerCoinBalance(status.coins);
-  },
-
-  async startVideo() {
-    return startVideoAdSession();
-  },
-
-  /** Only call this once the ad provider has actually confirmed the
-   *  rewarded video completed — never merely because it started. */
-  async claimVideo(sessionId) {
-    const result = await claimVideoReward(sessionId);
-    if (result === 'credited') await get().refresh();
-    return result;
   },
 
   async startArticle(articleId) {

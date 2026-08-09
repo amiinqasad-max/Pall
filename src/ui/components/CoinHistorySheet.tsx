@@ -2,8 +2,8 @@
  * Coin transaction history — reads tartan.coin_history(), which merges the
  * two ledger tables the server already keeps (coin_ledger for rewarded_ad/
  * daily_challenge/daily_reward, coin_transactions for purchase_credit/
- * revive_spend/video_reward/article_reward). Read-only: nothing here writes
- * anything, it's a window onto the real server-side ledger.
+ * revive_spend/article_reward). Read-only: nothing here writes anything,
+ * it's a window onto the real server-side ledger.
  */
 
 import { useEffect, useState } from 'react';
@@ -21,7 +21,6 @@ const REASON_LABELS: Record<string, string> = {
   purchase_credit: 'Purchase',
   revive_spend: 'Revive',
   admin_adjustment: 'Adjustment',
-  video_reward: 'Watch Video',
   article_reward: 'Read Article',
 };
 
